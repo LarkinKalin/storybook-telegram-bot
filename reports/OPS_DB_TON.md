@@ -36,3 +36,18 @@
 Принято решение использовать **Docker Compose** как основной способ запуска сервисов на этапе MVP.
 
 Статус: DONE
+## 2026-01-17 — TG.1.2.02 — GitHub remote + первый push (DONE)
+
+Сделано:
+- Создан GitHub repo: LarkinKalin/storybook-telegram-bot
+- Настроен SSH-доступ с Floki (ssh -T git@github.com OK)
+- Добавлен remote origin
+- Ветка переименована в main
+- Выполнен push main в origin
+
+Проверка:
+- git remote -v
+- git push -u origin main
+- GitHub содержит коммиты проекта
+
+Результат: OK

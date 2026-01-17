@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  tg-bot:
+    image: python:3.11-slim
+    container_name: skazka-tg-bot
+    command: ["sleep", "infinity"]
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15
+    container_name: skazka-postgres
+    environment:
+      POSTGRES_DB: skazka
+      POSTGRES_USER: skazka
+      POSTGRES_PASSWORD: skazka
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+volumes:
+  pg_data:

@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   tg-bot:
     build:
@@ -7,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: skazka-tg-bot
     env_file:
-      - ./.env
+      - /etc/skazka/skazka.env
     restart: unless-stopped
     depends_on:
       - postgres

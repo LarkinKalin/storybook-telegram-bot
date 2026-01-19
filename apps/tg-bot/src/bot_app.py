@@ -1,17 +1,15 @@
 import os
 import asyncio
 from aiogram import Bot, Dispatcher
-from aiogram.filters import CommandStart
-from aiogram.types import Message
+from aiogram.fsm.storage.memory import MemoryStorage
+from src.handlers.l1 import router as l1_router
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
+dp.include_router(l1_router)
 
 
-@dp.message(CommandStart())
-async def start_handler(message: Message) -> None:
-    await message.answer("Сказка-бот запущен. /new чтобы начать (пока заглушка).")
 
 
 async def main() -> None:

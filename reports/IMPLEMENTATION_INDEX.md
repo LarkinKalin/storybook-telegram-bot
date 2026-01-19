@@ -17,3 +17,5 @@
 - ENGINE.md
 - LLM_FILTERS.md
 - OPS_DB_TON.md
+TG.2.2.01+TG.2.3.01 — runnable tg-bot in docker compose (/start OK) — 2026-01-19 — 7cdcc83,b03044e,b0f1ca1
+

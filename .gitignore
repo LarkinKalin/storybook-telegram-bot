@@ -18,3 +18,6 @@ dist/
 
 # misc
 .DS_Store
+
+.env
+infra/docker/.env

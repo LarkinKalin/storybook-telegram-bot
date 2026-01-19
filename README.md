@@ -4,4 +4,3 @@
 - Postgres
 - Docker Compose v2
 - Secrets: /etc/skazka/skazka.env
-Тестовая запись строки  qq  

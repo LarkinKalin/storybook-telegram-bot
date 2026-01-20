@@ -9,7 +9,14 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from src.keyboards.l1 import build_l1_keyboard
 from src.keyboards.l2 import build_l2_keyboard
 from src.keyboards.l3 import build_l3_keyboard
-from src.services.runtime_sessions import has_active, start_session, touch_last_step
+from src.keyboards.confirm import build_new_story_confirm_keyboard
+from src.services.runtime_sessions import (
+    finish_session,
+    get_session,
+    has_active,
+    start_session,
+    touch_last_step,
+)
 from src.services.theme_registry import registry
 from src.states import L3, UX
 
@@ -83,26 +90,63 @@ async def on_theme(callback: CallbackQuery, state: FSMContext) -> None:
         await _render_l2(callback.message, 0, edit=True)
         return
     if has_active(callback.from_user.id):
-        await state.set_state(UX.l1)
+        confirm_text = (
+            "У тебя уже идёт сказка. Начать новую? Старая будет завершена."
+        )
         await callback.message.answer(
-            "У тебя уже есть активная сказка. Нажми ⏩ Продолжить.",
-            reply_markup=build_l1_keyboard(True),
+            confirm_text,
+            reply_markup=build_new_story_confirm_keyboard(theme["id"]),
         )
         await callback.answer()
         return
 
+    await _start_theme_session(callback.message, state, callback.from_user.id, theme)
+    await callback.answer()
+
+
+@router.callback_query(lambda query: query.data and query.data.startswith("new:yes:"))
+async def on_new_story_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+    if not callback.from_user:
+        await callback.answer()
+        return
+    theme_id = callback.data.split(":", 2)[2] if callback.data else ""
+    theme = registry.get_theme(theme_id)
+    if not theme:
+        await callback.answer("Тема устарела")
+        await _render_l2(callback.message, 0, edit=True)
+        return
+    session = get_session(callback.from_user.id)
+    if session and session.last_step_message_id:
+        try:
+            await callback.message.bot.edit_message_reply_markup(
+                chat_id=callback.message.chat.id,
+                message_id=session.last_step_message_id,
+                reply_markup=None,
+            )
+        except Exception:
+            pass
+    finish_session(callback.from_user.id)
+    await _start_theme_session(callback.message, state, callback.from_user.id, theme)
+    await callback.answer()
+
+
+async def _start_theme_session(
+    message: Message, state: FSMContext, tg_id: int, theme: dict[str, str]
+) -> None:
     await state.update_data(theme_id=theme["id"], style_id=theme["style_default"])
-    start_session(callback.from_user.id, theme_id, max_steps=1)
+    start_session(tg_id, theme["id"], max_steps=1)
     step_text = f"Шаг 1/1. Тема: {theme['title']}. История появится в следующем квесте."
-    message = await callback.message.answer(step_text, reply_markup=ReplyKeyboardRemove())
+    sent_message = await message.answer(step_text, reply_markup=ReplyKeyboardRemove())
     try:
-        await callback.message.bot.edit_message_reply_markup(
-            chat_id=message.chat.id,
-            message_id=message.message_id,
+        await message.bot.edit_message_reply_markup(
+            chat_id=sent_message.chat.id,
+            message_id=sent_message.message_id,
             reply_markup=build_l3_keyboard(),
         )
     except Exception:
         pass
-    touch_last_step(callback.from_user.id, message.message_id, int(time()))
+    touch_last_step(tg_id, sent_message.message_id, int(time()))
     await state.set_state(L3.STEP)
-    await callback.answer()

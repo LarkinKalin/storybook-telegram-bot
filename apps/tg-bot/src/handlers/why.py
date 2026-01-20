@@ -2,25 +2,14 @@ from __future__ import annotations
 
 from aiogram import Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import Message
 
-from src.handlers.l1 import open_l1
 from src.keyboards.why import build_why_keyboard
 from src.services.read_prefs import get_read_mode
 from src.services.whyqa import whyqa
-from src.states import L5, UX
+from src.states import L5
 
 router = Router(name="why")
-
-
-@router.callback_query(lambda query: query.data == "go:l1")
-async def on_go_l1(callback: CallbackQuery, state: FSMContext) -> None:
-    if not callback.message:
-        await callback.answer()
-        return
-    await state.set_state(UX.l1)
-    await open_l1(callback.message, state)
-    await callback.answer()
 
 
 @router.message(L5.WHY_TEXT)

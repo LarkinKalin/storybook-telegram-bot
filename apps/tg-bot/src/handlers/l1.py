@@ -128,7 +128,11 @@ def _is_private(message: Message) -> bool:
 
 async def _send_help_screen(message: Message) -> None:
     sent = await message.answer(
-        "❓ Помощь\n\nЗдесь будет помощь по боту.",
+        "❓ Помощь\n\n"
+        "Как начать: нажми ▶ Начать сказку и выбери тему.\n"
+        "Как продолжить: ⏩ Продолжить или команда /resume.\n"
+        "Почемучка: 🧠 Почемучка — задай вопрос, получишь простой ответ.\n"
+        "Команды: /start /resume /status /help /shop.",
         reply_markup=ReplyKeyboardRemove(),
     )
     try:
@@ -164,6 +168,25 @@ def _is_session_valid(session: object) -> bool:
     step = getattr(session, "step", None)
     max_steps = getattr(session, "max_steps", None)
     return isinstance(step, int) and isinstance(max_steps, int)
+
+
+async def _screen_label(state: FSMContext) -> str:
+    state_name = await state.get_state()
+    if not state_name:
+        return "unknown"
+    if state_name.endswith("l1"):
+        return "l1"
+    if state_name.endswith("l2"):
+        return "l2"
+    if state_name.endswith("WHY_TEXT"):
+        return "why"
+    if state_name.endswith("STEP"):
+        return "l3"
+    if state_name.endswith("HELP"):
+        return "help"
+    if state_name.endswith("SHOP"):
+        return "shop"
+    return "unknown"
 
 
 async def do_continue(message: Message, state: FSMContext) -> None:
@@ -227,14 +250,16 @@ async def on_resume(message: Message, state: FSMContext) -> None:
 
 
 @router.message(Command("status"))
-async def on_status(message: Message) -> None:
+async def on_status(message: Message, state: FSMContext) -> None:
     if not _is_private(message):
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
         return
 
     session = get_session(message.from_user.id)
     active = has_active(message.from_user.id)
+    screen = await _screen_label(state)
     lines = [f"active: {'yes' if active else 'no'}"]
+    lines.append(f"screen: {screen}")
     if active and _is_session_valid(session):
         lines.append(f"step_ui: {session.step + 1}")
         lines.append(f"max_steps: {session.max_steps}")
@@ -291,6 +316,15 @@ async def on_go_help(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(L4.HELP)
     await _send_help_screen(callback.message)
     await callback.answer()
+
+
+@router.message(L3.STEP)
+@router.message(L4.HELP)
+@router.message(L4.SHOP)
+async def on_inline_screen_text(message: Message) -> None:
+    if not message.text:
+        return
+    await message.answer("Сейчас жми кнопки. Если потерялся, нажми ⬅ В меню.")
 
 
 @router.callback_query(lambda query: query.data == "go:shop")

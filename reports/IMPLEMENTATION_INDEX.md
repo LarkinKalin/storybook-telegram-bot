@@ -25,3 +25,5 @@ TG.2.2.01+TG.2.3.01 — runnable tg-bot in docker compose (/start OK) — 2026-0
 2026-01-19 | TG.2.1.02 | DONE | L1 home menu: fixed labels, label-first routing, unknown text hint+repeat; slash aliases + prefix suggestions; commits: 9ba4429, 1e6adc3, d8939cb
 
 2026-01-19 | TG.2.1.03 | DONE | L2 topic picker: themes from json; inline buttons; callback t:<id>, pg2:<page>; page_size=10; empty-safe
+
+2026-01-19 | TG.2.1.04.C | DONE | Why mode (WHY_TEXT) + L1 button + why_qa matching + fallback; commit 8528dd5

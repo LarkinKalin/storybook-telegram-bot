@@ -7,8 +7,9 @@ from aiogram.types import Message
 
 from src.handlers.l2 import open_l2
 from src.keyboards.l1 import L1Label, build_l1_keyboard
+from src.keyboards.why import build_why_keyboard
 from src.services.runtime_sessions import has_active, set_active
-from src.states import UX
+from src.states import L5, UX
 
 router = Router(name="l1")
 
@@ -22,6 +23,11 @@ L1_ALIASES: dict[str, L1Label] = {
     "/start_story": L1Label.START,
     "/начать": L1Label.START,
     "/сказка": L1Label.START,
+
+    # Why (кнопка "🧠 Почемучка")
+    "/why": L1Label.WHY,
+    "/почему": L1Label.WHY,
+    "/почемучка": L1Label.WHY,
 
     # Continue (кнопка "⏩ Продолжить")
     "/continue": L1Label.CONTINUE,
@@ -158,6 +164,12 @@ async def l1_any(message: Message, state: FSMContext) -> None:
     if text == L1Label.START.value:
         set_active(message.from_user.id, True)
         await open_l2(message, state)
+        return
+
+    if text == L1Label.WHY.value:
+        await state.set_state(L5.WHY_TEXT)
+        await message.answer("Задай вопрос — попробую объяснить простыми словами.")
+        await message.answer("Что тебя интересует?", reply_markup=build_why_keyboard())
         return
 
     if text == L1Label.CONTINUE.value:

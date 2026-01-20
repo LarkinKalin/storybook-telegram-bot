@@ -27,3 +27,15 @@
 2026-01-19 | TG.2.1.02A | DONE | L1: slash aliases for all L1 buttons + prefix suggestions for partial slash input; BotFather commands configured (latin) for client-side autocomplete
 
 2026-01-19 | TG.2.1.03 | DONE | L2 topic picker: themes from json; inline buttons; callback t:<id>, pg2:<page>; page_size=10; empty-safe
+
+2026-01-19 | TG.2.1.04.C | DONE | Добавлен режим “🧠 Почемучка” (WHY_TEXT) в L1, база why_qa.json, матчинг, fallback, inline-выход в меню; commit 8528dd5
+Изменённые файлы:
+- /srv/git/skazka/apps/tg-bot/src/bot_app.py
+- /srv/git/skazka/apps/tg-bot/src/handlers/l1.py
+- /srv/git/skazka/apps/tg-bot/src/handlers/why.py
+- /srv/git/skazka/apps/tg-bot/src/keyboards/l1.py
+- /srv/git/skazka/apps/tg-bot/src/keyboards/why.py
+- /srv/git/skazka/apps/tg-bot/src/services/read_prefs.py
+- /srv/git/skazka/apps/tg-bot/src/services/whyqa.py
+- /srv/git/skazka/apps/tg-bot/src/data/why_qa.json
+- /srv/git/skazka/apps/tg-bot/src/states.py

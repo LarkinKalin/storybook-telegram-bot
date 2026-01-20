@@ -3,7 +3,8 @@ from __future__ import annotations
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardRemove
+
 
 from src.handlers.l2 import open_l2
 from src.keyboards.l1 import L1Label, build_l1_keyboard
@@ -168,9 +169,13 @@ async def l1_any(message: Message, state: FSMContext) -> None:
     
     if text == L1Label.WHY.value:
         await state.set_state(L5.WHY_TEXT)
-        await message.answer("Задай вопрос — попробую объяснить простыми словами.")
+        await message.answer(
+            "🧠 Почемучка. Задай вопрос текстом (можно надиктовать так, чтобы Telegram вставил текст).",
+            reply_markup=ReplyKeyboardRemove(),
+        )
         await message.answer("Что тебя интересует?", reply_markup=build_why_keyboard())
         return
+
 
     from aiogram.types import ReplyKeyboardRemove
     # (импорт добавь рядом с другими импортами aiogram.types)

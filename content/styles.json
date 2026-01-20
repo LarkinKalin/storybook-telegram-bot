@@ -1,0 +1,17 @@
+{
+  "version": "v0.1",
+  "styles": [
+    {"style_id":"bulychev","style_tag":"в духе Кира Булычёва"},
+    {"style_id":"nosov","style_tag":"в духе Николая Носова"},
+    {"style_id":"oster","style_tag":"в духе Григория Остера"},
+    {"style_id":"krapivin","style_tag":"в духе Владислава Крапивина"},
+    {"style_id":"schwarz","style_tag":"в духе Евгения Шварца"},
+    {"style_id":"lindgren","style_tag":"в духе Астрид Линдгрен"},
+    {"style_id":"prokofeva","style_tag":"в духе Софьи Прокофьевой"},
+    {"style_id":"jansson","style_tag":"в духе Туве Янссон"},
+    {"style_id":"uspensky","style_tag":"в духе Эдуарда Успенского"},
+    {"style_id":"koval","style_tag":"в духе Юрия Коваля"},
+    {"style_id":"dragunsky","style_tag":"в духе Виктора Драгунского"},
+    {"style_id":"pivovarova","style_tag":"в духе Ирины Пивоваровой"}
+  ]
+}

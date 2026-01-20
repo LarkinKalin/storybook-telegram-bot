@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
+from src.handlers.l2 import open_l2
 from src.keyboards.l1 import L1Label, build_l1_keyboard
 from src.services.runtime_sessions import has_active, set_active
 from src.states import UX
@@ -155,10 +156,8 @@ async def l1_any(message: Message, state: FSMContext) -> None:
 
     # 1) СНАЧАЛА: кнопочные команды (строго по лейблам)
     if text == L1Label.START.value:
-        # Заглушка маршрутизации (пока нет L2): считаем, что "активная" появилась.
         set_active(message.from_user.id, True)
-        await message.answer("▶ Начать сказку → заглушка (дальше будет L2: выбор темы).")
-        await open_l1(message, state)
+        await open_l2(message, state)
         return
 
     if text == L1Label.CONTINUE.value:

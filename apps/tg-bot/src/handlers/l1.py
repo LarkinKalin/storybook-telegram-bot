@@ -165,17 +165,27 @@ async def l1_any(message: Message, state: FSMContext) -> None:
         set_active(message.from_user.id, True)
         await open_l2(message, state)
         return
-
+    
     if text == L1Label.WHY.value:
         await state.set_state(L5.WHY_TEXT)
         await message.answer("Задай вопрос — попробую объяснить простыми словами.")
         await message.answer("Что тебя интересует?", reply_markup=build_why_keyboard())
         return
 
-    if text == L1Label.CONTINUE.value:
-        await message.answer("⏩ Продолжить → заглушка (дальше будет /resume и CONTINUE в L3).")
-        await open_l1(message, state)
+    from aiogram.types import ReplyKeyboardRemove
+    # (импорт добавь рядом с другими импортами aiogram.types)
+
+    ...
+
+    if text == L1Label.WHY.value:
+        await state.set_state(L5.WHY_TEXT)
+        await message.answer(
+            "🧠 Почемучка. Задай вопрос текстом (можно продиктовать в поле ввода, чтобы получилось текстом).",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        await message.answer("Что тебя интересует?", reply_markup=build_why_keyboard())
         return
+
 
     if text == L1Label.MY.value:
         await message.answer("🧩 Мои сказки → заглушка.")

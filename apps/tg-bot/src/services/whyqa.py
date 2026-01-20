@@ -147,5 +147,5 @@ def normalize_text(text: str) -> str:
     return cleaned.strip()
 
 
-_repo_root = Path(__file__).resolve().parents[4]
-whyqa = WhyQA(_repo_root / "apps" / "tg-bot" / "src" / "data" / "why_qa.json")
+_src_root = Path(__file__).resolve().parents[1]
+whyqa = WhyQA(_src_root / "data" / "why_qa.json")

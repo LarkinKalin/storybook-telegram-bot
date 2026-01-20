@@ -39,3 +39,7 @@
 - /srv/git/skazka/apps/tg-bot/src/services/whyqa.py
 - /srv/git/skazka/apps/tg-bot/src/data/why_qa.json
 - /srv/git/skazka/apps/tg-bot/src/states.py
+<<<<<<< ours
+=======
+2026-01-19 | TG.2.1.04.C | FIX | whyqa data path uses src/data for container runtime; commit 0c3e83d
+>>>>>>> theirs

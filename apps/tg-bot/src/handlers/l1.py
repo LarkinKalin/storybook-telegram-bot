@@ -11,6 +11,7 @@ from src.handlers.l2 import open_l2
 from src.keyboards.l1 import L1Label, build_l1_keyboard
 from src.keyboards.help import build_help_keyboard
 from src.keyboards.l3 import build_l3_keyboard
+from src.keyboards.settings import build_settings_keyboard
 from src.keyboards.shop import build_shop_keyboard
 from src.keyboards.why import build_why_keyboard
 from src.services.runtime_sessions import abort_session, get_session, has_active, touch_last_step
@@ -109,16 +110,17 @@ def normalize_l1_input(text: str) -> str:
     return t
 
 
-async def open_l1(message: Message, state: FSMContext) -> None:
+async def open_l1(message: Message, state: FSMContext, user_id: int | None = None) -> None:
     # MVP-правило: только private чат.
     if message.chat.type != "private":
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
         return
+    tg_id = user_id if user_id is not None else message.from_user.id
 
     await state.set_state(UX.l1)
     await message.answer(
         "🏠 Главное меню",
-        reply_markup=build_l1_keyboard(has_active(message.from_user.id)),
+        reply_markup=build_l1_keyboard(has_active(tg_id)),
     )
 
 
@@ -126,38 +128,54 @@ def _is_private(message: Message) -> bool:
     return message.chat.type == "private"
 
 
+async def _send_inline_screen(
+    message: Message, text: str, keyboard_builder
+) -> None:
+    sent = await message.answer("...", reply_markup=ReplyKeyboardRemove())
+    try:
+        await message.bot.edit_message_text(
+            text,
+            chat_id=sent.chat.id,
+            message_id=sent.message_id,
+            reply_markup=keyboard_builder(),
+        )
+    except Exception:
+        try:
+            await message.bot.delete_message(
+                chat_id=sent.chat.id,
+                message_id=sent.message_id,
+            )
+        except Exception:
+            pass
+        await message.answer(text, reply_markup=keyboard_builder())
+
+
 async def _send_help_screen(message: Message) -> None:
-    sent = await message.answer(
+    await _send_inline_screen(
+        message,
         "❓ Помощь\n\n"
         "Как начать: нажми ▶ Начать сказку и выбери тему.\n"
         "Как продолжить: ⏩ Продолжить или команда /resume.\n"
         "Почемучка: 🧠 Почемучка — задай вопрос, получишь простой ответ.\n"
         "Команды: /start /resume /status /help /shop.",
-        reply_markup=ReplyKeyboardRemove(),
+        build_help_keyboard,
     )
-    try:
-        await message.bot.edit_message_reply_markup(
-            chat_id=sent.chat.id,
-            message_id=sent.message_id,
-            reply_markup=build_help_keyboard(),
-        )
-    except Exception:
-        pass
 
 
 async def _send_shop_screen(message: Message) -> None:
-    sent = await message.answer(
+    await _send_inline_screen(
+        message,
         "🛒 Магазин скоро, оплаты в MVP нет.",
-        reply_markup=ReplyKeyboardRemove(),
+        build_shop_keyboard,
     )
-    try:
-        await message.bot.edit_message_reply_markup(
-            chat_id=sent.chat.id,
-            message_id=sent.message_id,
-            reply_markup=build_shop_keyboard(),
-        )
-    except Exception:
-        pass
+
+
+async def _send_settings_screen(message: Message) -> None:
+    await _send_inline_screen(
+        message,
+        "⚙ Настройки\n\nПока настроек нет, скоро появятся.",
+        build_settings_keyboard,
+    )
 
 
 def _is_session_valid(session: object) -> bool:
@@ -186,6 +204,8 @@ async def _screen_label(state: FSMContext) -> str:
         return "help"
     if state_name.endswith("SHOP"):
         return "shop"
+    if state_name.endswith("SETTINGS"):
+        return "settings"
     return "unknown"
 
 
@@ -309,7 +329,7 @@ async def on_go_l1(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message:
         await callback.answer()
         return
-    await open_l1(callback.message, state)
+    await open_l1(callback.message, state, user_id=callback.from_user.id)
     await callback.answer()
 
 
@@ -330,6 +350,7 @@ async def on_go_help(callback: CallbackQuery, state: FSMContext) -> None:
 @router.message(L3.STEP)
 @router.message(L4.HELP)
 @router.message(L4.SHOP)
+@router.message(L4.SETTINGS)
 async def on_inline_screen_text(message: Message) -> None:
     if not message.text:
         return
@@ -429,8 +450,8 @@ async def l1_any(message: Message, state: FSMContext) -> None:
         return
 
     if text == L1Label.SETTINGS.value:
-        await message.answer("⚙ Настройки → заглушка.")
-        await open_l1(message, state)
+        await state.set_state(L4.SETTINGS)
+        await _send_settings_screen(message)
         return
 
     # 2) Потом: "произвольный" неизвестный ввод

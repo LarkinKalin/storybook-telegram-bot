@@ -13,6 +13,7 @@ class L3(StatesGroup):
 class L4(StatesGroup):
     HELP = State()
     SHOP = State()
+    SETTINGS = State()
 
 
 class L5(StatesGroup):

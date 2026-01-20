@@ -5,7 +5,6 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, ReplyKeyboardRemove
 
-
 from src.handlers.l2 import open_l2
 from src.keyboards.l1 import L1Label, build_l1_keyboard
 from src.keyboards.why import build_why_keyboard
@@ -166,29 +165,19 @@ async def l1_any(message: Message, state: FSMContext) -> None:
         set_active(message.from_user.id, True)
         await open_l2(message, state)
         return
-    
+
     if text == L1Label.WHY.value:
         await state.set_state(L5.WHY_TEXT)
         await message.answer(
-            "🧠 Почемучка. Задай вопрос текстом (можно надиктовать так, чтобы Telegram вставил текст).",
+            "Задай вопрос — попробую объяснить простыми словами.",
             reply_markup=ReplyKeyboardRemove(),
         )
         await message.answer("Что тебя интересует?", reply_markup=build_why_keyboard())
         return
 
-
-    from aiogram.types import ReplyKeyboardRemove
-    # (импорт добавь рядом с другими импортами aiogram.types)
-
-    ...
-
-    if text == L1Label.WHY.value:
-        await state.set_state(L5.WHY_TEXT)
-        await message.answer(
-            "🧠 Почемучка. Задай вопрос текстом (можно продиктовать в поле ввода, чтобы получилось текстом).",
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        await message.answer("Что тебя интересует?", reply_markup=build_why_keyboard())
+    if text == L1Label.CONTINUE.value:
+        await message.answer("⏩ Продолжить → заглушка (дальше будет /resume и CONTINUE в L3).")
+        await open_l1(message, state)
         return
 
 

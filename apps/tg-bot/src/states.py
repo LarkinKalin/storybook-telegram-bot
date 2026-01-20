@@ -10,5 +10,10 @@ class L3(StatesGroup):
     STEP = State()
 
 
+class L4(StatesGroup):
+    HELP = State()
+    SHOP = State()
+
+
 class L5(StatesGroup):
     WHY_TEXT = State()

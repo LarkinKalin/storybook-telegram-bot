@@ -91,6 +91,7 @@ async def on_theme(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer()
         return
 
+    await state.update_data(theme_id=theme["id"], style_id=theme["style_default"])
     start_session(callback.from_user.id, theme_id, max_steps=1)
     step_text = f"Шаг 1/1. Тема: {theme['title']}. История появится в следующем квесте."
     message = await callback.message.answer(step_text, reply_markup=ReplyKeyboardRemove())

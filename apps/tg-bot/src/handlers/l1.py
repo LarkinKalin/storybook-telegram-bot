@@ -9,11 +9,13 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from src.handlers.l2 import open_l2
 from src.keyboards.l1 import L1Label, build_l1_keyboard
+from src.keyboards.help import build_help_keyboard
 from src.keyboards.l3 import build_l3_keyboard
+from src.keyboards.shop import build_shop_keyboard
 from src.keyboards.why import build_why_keyboard
 from src.services.runtime_sessions import abort_session, get_session, has_active, touch_last_step
 from src.services.theme_registry import registry
-from src.states import L3, L5, UX
+from src.states import L3, L4, L5, UX
 
 router = Router(name="l1")
 
@@ -125,19 +127,33 @@ def _is_private(message: Message) -> bool:
 
 
 async def _send_help_screen(message: Message) -> None:
-    await message.answer(
+    sent = await message.answer(
         "❓ Помощь\n\nЗдесь будет помощь по боту.",
         reply_markup=ReplyKeyboardRemove(),
     )
-    await message.answer("Выбери действие ниже.", reply_markup=build_l3_keyboard())
+    try:
+        await message.bot.edit_message_reply_markup(
+            chat_id=sent.chat.id,
+            message_id=sent.message_id,
+            reply_markup=build_help_keyboard(),
+        )
+    except Exception:
+        pass
 
 
 async def _send_shop_screen(message: Message) -> None:
-    await message.answer(
+    sent = await message.answer(
         "🛒 Магазин скоро, оплаты в MVP нет.",
         reply_markup=ReplyKeyboardRemove(),
     )
-    await message.answer("Выбери действие ниже.", reply_markup=build_l3_keyboard())
+    try:
+        await message.bot.edit_message_reply_markup(
+            chat_id=sent.chat.id,
+            message_id=sent.message_id,
+            reply_markup=build_shop_keyboard(),
+        )
+    except Exception:
+        pass
 
 
 def _is_session_valid(session: object) -> bool:
@@ -169,7 +185,6 @@ async def do_continue(message: Message, state: FSMContext) -> None:
 
     now_ts = int(time())
     if session.last_step_sent_at and now_ts - session.last_step_sent_at < 5:
-        await message.answer("Подожди немного, я уже отправил шаг.")
         await open_l1(message, state)
         return
 
@@ -220,7 +235,7 @@ async def on_status(message: Message) -> None:
     session = get_session(message.from_user.id)
     active = has_active(message.from_user.id)
     lines = [f"active: {'yes' if active else 'no'}"]
-    if active and session:
+    if active and _is_session_valid(session):
         lines.append(f"step_ui: {session.step + 1}")
         lines.append(f"max_steps: {session.max_steps}")
         theme_title = session.theme_id
@@ -229,6 +244,11 @@ async def on_status(message: Message) -> None:
             theme_title = theme["title"]
         if theme_title:
             lines.append(f"theme: {theme_title}")
+    elif active:
+        lines.append("step_ui: unknown")
+        lines.append("max_steps: unknown")
+        lines.append("theme: unknown")
+        abort_session(message.from_user.id)
     await message.answer("\n".join(lines))
 
 
@@ -237,7 +257,7 @@ async def on_help(message: Message, state: FSMContext) -> None:
     if not _is_private(message):
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
         return
-    await state.set_state(UX.l1)
+    await state.set_state(L4.HELP)
     await _send_help_screen(message)
 
 
@@ -246,8 +266,17 @@ async def on_shop(message: Message, state: FSMContext) -> None:
     if not _is_private(message):
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
         return
-    await state.set_state(UX.l1)
+    await state.set_state(L4.SHOP)
     await _send_shop_screen(message)
+
+
+@router.callback_query(lambda query: query.data == "go:l1")
+async def on_go_l1(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+    await open_l1(callback.message, state)
+    await callback.answer()
 
 
 @router.callback_query(lambda query: query.data == "go:help")
@@ -259,7 +288,7 @@ async def on_go_help(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
         await callback.answer()
         return
-    await state.set_state(UX.l1)
+    await state.set_state(L4.HELP)
     await _send_help_screen(callback.message)
     await callback.answer()
 
@@ -273,7 +302,7 @@ async def on_go_shop(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
         await callback.answer()
         return
-    await state.set_state(UX.l1)
+    await state.set_state(L4.SHOP)
     await _send_shop_screen(callback.message)
     await callback.answer()
 
@@ -347,10 +376,12 @@ async def l1_any(message: Message, state: FSMContext) -> None:
         return
 
     if text == L1Label.SHOP.value:
+        await state.set_state(L4.SHOP)
         await _send_shop_screen(message)
         return
 
     if text == L1Label.HELP.value:
+        await state.set_state(L4.HELP)
         await _send_help_screen(message)
         return
 

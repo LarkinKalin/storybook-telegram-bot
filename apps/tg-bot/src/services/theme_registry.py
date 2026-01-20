@@ -140,5 +140,21 @@ class ThemeRegistry:
         return validated
 
 
-_repo_root = Path(__file__).resolve().parents[4]
-registry = ThemeRegistry(_repo_root / "content")
+import os
+
+def _default_content_dir() -> Path:
+    # 1) явный путь через env (для docker и прод-окружений)
+    env = os.getenv("SKAZKA_CONTENT_DIR", "").strip()
+    if env:
+        return Path(env)
+
+    # 2) на хосте попробуем найти рядом с репо: поднимаемся вверх и ищем content/themes.json
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "content" / "themes.json").exists():
+            return parent / "content"
+
+    # 3) дефолт для контейнера (если content смонтирован)
+    return Path("/app/content")
+
+registry = ThemeRegistry(_default_content_dir())

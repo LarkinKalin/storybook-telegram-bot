@@ -6,6 +6,10 @@ services:
     container_name: skazka-tg-bot
     env_file:
       - /etc/skazka/skazka.env
+    environment:
+      - SKAZKA_CONTENT_DIR=/app/content
+    volumes:
+      - ../../content:/app/content:ro
     restart: unless-stopped
     depends_on:
       - postgres

@@ -10,6 +10,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
 dp = Dispatcher(storage=MemoryStorage())
 dp.include_router(l1_router)
+
+
 dp.include_router(l2_router)
 
 

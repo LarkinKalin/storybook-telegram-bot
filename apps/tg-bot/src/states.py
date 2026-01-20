@@ -6,5 +6,9 @@ class UX(StatesGroup):
     l2 = State()
 
 
+class L3(StatesGroup):
+    STEP = State()
+
+
 class L5(StatesGroup):
     WHY_TEXT = State()

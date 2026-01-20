@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+from time import time
+
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from src.handlers.l2 import open_l2
 from src.keyboards.l1 import L1Label, build_l1_keyboard
+from src.keyboards.l3 import build_l3_keyboard
 from src.keyboards.why import build_why_keyboard
-from src.services.runtime_sessions import has_active, set_active
-from src.states import L5, UX
+from src.services.runtime_sessions import abort_session, get_session, has_active, touch_last_step
+from src.services.theme_registry import registry
+from src.states import L3, L5, UX
 
 router = Router(name="l1")
 
@@ -116,6 +120,164 @@ async def open_l1(message: Message, state: FSMContext) -> None:
     )
 
 
+def _is_private(message: Message) -> bool:
+    return message.chat.type == "private"
+
+
+async def _send_help_screen(message: Message) -> None:
+    await message.answer(
+        "❓ Помощь\n\nЗдесь будет помощь по боту.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await message.answer("Выбери действие ниже.", reply_markup=build_l3_keyboard())
+
+
+async def _send_shop_screen(message: Message) -> None:
+    await message.answer(
+        "🛒 Магазин скоро, оплаты в MVP нет.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await message.answer("Выбери действие ниже.", reply_markup=build_l3_keyboard())
+
+
+def _is_session_valid(session: object) -> bool:
+    if not session:
+        return False
+    if getattr(session, "theme_id", None) is None:
+        return False
+    step = getattr(session, "step", None)
+    max_steps = getattr(session, "max_steps", None)
+    return isinstance(step, int) and isinstance(max_steps, int)
+
+
+async def do_continue(message: Message, state: FSMContext) -> None:
+    if not _is_private(message):
+        await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
+        return
+
+    if not has_active(message.from_user.id):
+        await message.answer("Нет активной сказки. Нажми ▶ Начать сказку.")
+        await open_l1(message, state)
+        return
+
+    session = get_session(message.from_user.id)
+    if not _is_session_valid(session):
+        abort_session(message.from_user.id)
+        await message.answer("Сессия потерялась. Начни заново.")
+        await open_l1(message, state)
+        return
+
+    now_ts = int(time())
+    if session.last_step_sent_at and now_ts - session.last_step_sent_at < 5:
+        await message.answer("Подожди немного, я уже отправил шаг.")
+        await open_l1(message, state)
+        return
+
+    if session.last_step_message_id:
+        try:
+            await message.bot.edit_message_reply_markup(
+                chat_id=message.chat.id,
+                message_id=session.last_step_message_id,
+                reply_markup=None,
+            )
+        except Exception:
+            pass
+
+    theme_title = session.theme_id
+    theme = registry.get_theme(session.theme_id) if session.theme_id else None
+    if theme:
+        theme_title = theme["title"]
+
+    step_ui = session.step + 1
+    step_text = (
+        f"Продолжаем: Шаг {step_ui}/{session.max_steps}. "
+        f"Тема: {theme_title}. История появится в следующем квесте."
+    )
+    sent_message = await message.answer(step_text, reply_markup=ReplyKeyboardRemove())
+    try:
+        await message.bot.edit_message_reply_markup(
+            chat_id=sent_message.chat.id,
+            message_id=sent_message.message_id,
+            reply_markup=build_l3_keyboard(),
+        )
+    except Exception:
+        pass
+    touch_last_step(message.from_user.id, sent_message.message_id, now_ts)
+    await state.set_state(L3.STEP)
+
+
+@router.message(Command("resume"))
+async def on_resume(message: Message, state: FSMContext) -> None:
+    await do_continue(message, state)
+
+
+@router.message(Command("status"))
+async def on_status(message: Message) -> None:
+    if not _is_private(message):
+        await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
+        return
+
+    session = get_session(message.from_user.id)
+    active = has_active(message.from_user.id)
+    lines = [f"active: {'yes' if active else 'no'}"]
+    if active and session:
+        lines.append(f"step_ui: {session.step + 1}")
+        lines.append(f"max_steps: {session.max_steps}")
+        theme_title = session.theme_id
+        theme = registry.get_theme(session.theme_id) if session.theme_id else None
+        if theme:
+            theme_title = theme["title"]
+        if theme_title:
+            lines.append(f"theme: {theme_title}")
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("help"))
+async def on_help(message: Message, state: FSMContext) -> None:
+    if not _is_private(message):
+        await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
+        return
+    await state.set_state(UX.l1)
+    await _send_help_screen(message)
+
+
+@router.message(Command("shop"))
+async def on_shop(message: Message, state: FSMContext) -> None:
+    if not _is_private(message):
+        await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
+        return
+    await state.set_state(UX.l1)
+    await _send_shop_screen(message)
+
+
+@router.callback_query(lambda query: query.data == "go:help")
+async def on_go_help(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+    if callback.message.chat.type != "private":
+        await callback.message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
+        await callback.answer()
+        return
+    await state.set_state(UX.l1)
+    await _send_help_screen(callback.message)
+    await callback.answer()
+
+
+@router.callback_query(lambda query: query.data == "go:shop")
+async def on_go_shop(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+    if callback.message.chat.type != "private":
+        await callback.message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
+        await callback.answer()
+        return
+    await state.set_state(UX.l1)
+    await _send_shop_screen(callback.message)
+    await callback.answer()
+
+
 @router.message(Command("start"))
 async def on_start(message: Message, state: FSMContext) -> None:
     # /start = вход в "дом" бота (L1), не "начать сказку"
@@ -162,7 +324,6 @@ async def l1_any(message: Message, state: FSMContext) -> None:
 
     # 1) СНАЧАЛА: кнопочные команды (строго по лейблам)
     if text == L1Label.START.value:
-        set_active(message.from_user.id, True)
         await open_l2(message, state)
         return
 
@@ -176,8 +337,7 @@ async def l1_any(message: Message, state: FSMContext) -> None:
         return
 
     if text == L1Label.CONTINUE.value:
-        await message.answer("⏩ Продолжить → заглушка (дальше будет /resume и CONTINUE в L3).")
-        await open_l1(message, state)
+        await do_continue(message, state)
         return
 
 
@@ -187,13 +347,11 @@ async def l1_any(message: Message, state: FSMContext) -> None:
         return
 
     if text == L1Label.SHOP.value:
-        await message.answer("🛒 Магазин → заглушка.")
-        await open_l1(message, state)
+        await _send_shop_screen(message)
         return
 
     if text == L1Label.HELP.value:
-        await message.answer("❓ Помощь → заглушка.")
-        await open_l1(message, state)
+        await _send_help_screen(message)
         return
 
     if text == L1Label.SETTINGS.value:

@@ -30,3 +30,4 @@ TG.2.2.01+TG.2.3.01 — runnable tg-bot in docker compose (/start OK) — 2026-0
 2026-01-19 | TG.2.1.04.C | FIX | whyqa data path uses src/data for container runtime; commit 0c3e83d
 2026-01-19 | TG.2.1.04.D | DONE | Why UX polish: hide reply keyboard + go:l1 back button; commit b21d33d
 2026-01-20 | TG.2.1.04.D | DONE | Why-mode UX: hide L1 keyboard + back button go:l1; commits 44f19e0,fabaa6a,d99dc87
+2026-01-20 | TG.2.1.05 | DONE | Runtime sessions + L3 inline step + resume/status/help/shop screens + theme pick gating by active session

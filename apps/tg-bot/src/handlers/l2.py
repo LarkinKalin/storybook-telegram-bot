@@ -139,14 +139,23 @@ async def _start_theme_session(
     await state.update_data(theme_id=theme["id"], style_id=theme["style_default"])
     start_session(tg_id, theme["id"], max_steps=1)
     step_text = f"Шаг 1/1. Тема: {theme['title']}. История появится в следующем квесте."
-    sent_message = await message.answer(step_text, reply_markup=ReplyKeyboardRemove())
+    sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
+    step_message = sent_message
     try:
-        await message.bot.edit_message_reply_markup(
+        await message.bot.edit_message_text(
+            step_text,
             chat_id=sent_message.chat.id,
             message_id=sent_message.message_id,
             reply_markup=build_l3_keyboard(),
         )
     except Exception:
-        pass
-    touch_last_step(tg_id, sent_message.message_id, int(time()))
+        try:
+            await message.bot.delete_message(
+                chat_id=sent_message.chat.id,
+                message_id=sent_message.message_id,
+            )
+        except Exception:
+            pass
+        step_message = await message.answer(step_text, reply_markup=build_l3_keyboard())
+    touch_last_step(tg_id, step_message.message_id, int(time()))
     await state.set_state(L3.STEP)

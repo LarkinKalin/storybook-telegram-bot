@@ -231,16 +231,25 @@ async def do_continue(message: Message, state: FSMContext) -> None:
         f"Продолжаем: Шаг {step_ui}/{session.max_steps}. "
         f"Тема: {theme_title}. История появится в следующем квесте."
     )
-    sent_message = await message.answer(step_text, reply_markup=ReplyKeyboardRemove())
+    sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
+    step_message = sent_message
     try:
-        await message.bot.edit_message_reply_markup(
+        await message.bot.edit_message_text(
+            step_text,
             chat_id=sent_message.chat.id,
             message_id=sent_message.message_id,
             reply_markup=build_l3_keyboard(),
         )
     except Exception:
-        pass
-    touch_last_step(message.from_user.id, sent_message.message_id, now_ts)
+        try:
+            await message.bot.delete_message(
+                chat_id=sent_message.chat.id,
+                message_id=sent_message.message_id,
+            )
+        except Exception:
+            pass
+        step_message = await message.answer(step_text, reply_markup=build_l3_keyboard())
+    touch_last_step(message.from_user.id, step_message.message_id, now_ts)
     await state.set_state(L3.STEP)
 
 

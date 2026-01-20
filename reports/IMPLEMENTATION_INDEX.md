@@ -29,3 +29,4 @@ TG.2.2.01+TG.2.3.01 — runnable tg-bot in docker compose (/start OK) — 2026-0
 2026-01-19 | TG.2.1.04.C | DONE | Why mode (WHY_TEXT) + L1 button + why_qa matching + fallback; commit 8528dd5
 2026-01-19 | TG.2.1.04.C | FIX | whyqa data path uses src/data for container runtime; commit 0c3e83d
 2026-01-19 | TG.2.1.04.D | DONE | Why UX polish: hide reply keyboard + go:l1 back button; commit b21d33d
+2026-01-20 | TG.2.1.04.D | DONE | Why-mode UX: hide L1 keyboard + back button go:l1; commits 44f19e0,fabaa6a,d99dc87

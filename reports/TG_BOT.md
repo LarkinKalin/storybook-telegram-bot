@@ -41,3 +41,8 @@
 - /srv/git/skazka/apps/tg-bot/src/states.py
 2026-01-19 | TG.2.1.04.C | FIX | whyqa data path uses src/data for container runtime; commit 0c3e83d
 2026-01-19 | TG.2.1.04.D | DONE | WHY_TEXT UX: hide ReplyKeyboard on entry, inline ⬅ Назад (go:l1), return to L1; commit b21d33d
+2026-01-20 | TG.2.1.04.D | DONE | Why-mode UX: remove L1 ReplyKeyboard on enter (ReplyKeyboardRemove), add inline back (go:l1) + callback handler; commits: 44f19e0, fabaa6a, d99dc87
+Изменённые файлы:
+- /srv/git/skazka/apps/tg-bot/src/handlers/l1.py
+- /srv/git/skazka/apps/tg-bot/src/handlers/why.py
+- /srv/git/skazka/apps/tg-bot/src/keyboards/why.py

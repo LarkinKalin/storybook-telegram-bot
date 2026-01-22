@@ -371,6 +371,15 @@ async def on_go_shop(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+@router.callback_query(lambda query: query.data == "go:continue")
+async def on_go_continue(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+    await do_continue(callback.message, state)
+    await callback.answer()
+
+
 @router.message(Command("start"))
 async def on_start(message: Message, state: FSMContext) -> None:
     # /start = вход в "дом" бота (L1), не "начать сказку"

@@ -51,3 +51,5 @@
 - GitHub содержит коммиты проекта
 
 Результат: OK
+
+2026-01-22 | TG.3.2.01 | DONE | DB schema fixed via SQL migrations: users/sessions/session_events/payments/confirm_requests/usage_windows/ui_events (+ indexes/constraints)

@@ -53,3 +53,4 @@
 Результат: OK
 
 2026-01-22 | TG.3.2.01 | DONE | DB schema fixed via SQL migrations: users/sessions/session_events/payments/confirm_requests/usage_windows/ui_events (+ indexes/constraints)
+2026-01-22 | TG.3.4.01 | DONE | DB access layer: repos for users/sessions/events/payments/confirm/ui_events/usage_windows (+ smoke check)

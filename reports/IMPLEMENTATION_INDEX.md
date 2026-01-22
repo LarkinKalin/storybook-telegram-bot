@@ -33,3 +33,4 @@ TG.2.2.01+TG.2.3.01 — runnable tg-bot in docker compose (/start OK) — 2026-0
 2026-01-20 | TG.2.1.05 | DONE | Runtime sessions + L3 inline step + resume/status/help/shop screens + theme pick gating by active session
 2026-01-20 | TG.2.3.02A | DONE | L2 active-story confirm: add ⬅ Назад to return to theme list without changing session
 2026-01-22 | TG.3.2.01 | DONE | DB schema fixed via SQL migrations: users/sessions/session_events/payments/confirm_requests/usage_windows/ui_events (+ indexes/constraints)
+2026-01-22 | TG.3.4.01 | DONE | DB access layer: repos for users/sessions/events/payments/confirm/ui_events/usage_windows (+ smoke check)

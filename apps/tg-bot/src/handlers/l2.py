@@ -63,6 +63,16 @@ async def on_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+@router.callback_query(lambda query: query.data == "go:l2")
+async def on_go_l2(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+    await state.set_state(UX.l2)
+    await _render_l2(callback.message, 0, edit=True)
+    await callback.answer()
+
+
 @router.callback_query(lambda query: query.data and query.data.startswith("pg2:"))
 async def on_page(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message:

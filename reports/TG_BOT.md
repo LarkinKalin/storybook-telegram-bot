@@ -48,3 +48,4 @@
 - /srv/git/skazka/apps/tg-bot/src/keyboards/why.py
 
 2026-01-20 | TG.2.1.05 | DONE | Runtime sessions (ACTIVE/FINISHED/ABORTED), L3 inline-only step, resume/status/help/shop flows, theme pick gating by active session
+2026-01-20 | TG.2.3.02A | DONE | L2 active-story confirm: add ⬅ Назад to return to theme list without changing session

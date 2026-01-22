@@ -47,7 +47,10 @@ def main() -> int:
 
     sessions.finish(session_id, status="FINISHED")
     active_after = sessions.get_active(user_id)
-    print(f"Active session after finish: {active_after is None}")
+    is_cleared = active_after is None
+    print(f"Active session after finish: {is_cleared}")
+    if not is_cleared:
+        raise RuntimeError("Expected no active session after finish")
 
     print("Smoke TG.3.4.01 completed")
     return 0

@@ -209,26 +209,28 @@ async def _screen_label(state: FSMContext) -> str:
     return "unknown"
 
 
-async def do_continue(message: Message, state: FSMContext) -> None:
+async def do_continue(message: Message, state: FSMContext, user_id: int | None = None) -> None:
     if not _is_private(message):
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
         return
 
-    if not has_active(message.from_user.id):
+    tg_id = user_id if user_id is not None else message.from_user.id
+
+    if not has_active(tg_id):
         await message.answer("Нет активной сказки. Нажми ▶ Начать сказку.")
-        await open_l1(message, state)
+        await open_l1(message, state, user_id=tg_id)
         return
 
-    session = get_session(message.from_user.id)
+    session = get_session(tg_id)
     if not _is_session_valid(session):
-        abort_session(message.from_user.id)
+        abort_session(tg_id)
         await message.answer("Сессия потерялась. Начни заново.")
-        await open_l1(message, state)
+        await open_l1(message, state, user_id=tg_id)
         return
 
     now_ts = int(time())
     if session.last_step_sent_at and now_ts - session.last_step_sent_at < 5:
-        await open_l1(message, state)
+        await open_l1(message, state, user_id=tg_id)
         return
 
     if session.last_step_message_id:
@@ -269,7 +271,7 @@ async def do_continue(message: Message, state: FSMContext) -> None:
         except Exception:
             pass
         step_message = await message.answer(step_text, reply_markup=build_l3_keyboard())
-    touch_last_step(message.from_user.id, step_message.message_id, now_ts)
+    touch_last_step(tg_id, step_message.message_id, now_ts)
     await state.set_state(L3.STEP)
 
 
@@ -376,7 +378,10 @@ async def on_go_continue(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message:
         await callback.answer()
         return
-    await do_continue(callback.message, state)
+    if not callback.from_user:
+        await callback.answer()
+        return
+    await do_continue(callback.message, state, user_id=callback.from_user.id)
     await callback.answer()
 
 

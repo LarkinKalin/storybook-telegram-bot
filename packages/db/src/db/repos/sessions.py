@@ -6,7 +6,7 @@ from typing import Any
 
 from psycopg.rows import dict_row
 
-from db.conn import transaction
+from db.conn import to_json, transaction
 
 _ALLOWED_FINISH_STATUSES = {"FINISHED", "ABORTED"}
 _SID8_ALPHABET = string.ascii_lowercase + string.digits
@@ -96,7 +96,7 @@ def create_new_active(
                         theme_id,
                         max_steps,
                         resolved_player_name,
-                        payload,
+                        to_json(payload),
                     ),
                 )
                 session_row = cur.fetchone()

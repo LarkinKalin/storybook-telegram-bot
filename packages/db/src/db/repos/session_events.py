@@ -4,7 +4,7 @@ from typing import Any
 
 from psycopg.rows import dict_row
 
-from db.conn import transaction
+from db.conn import to_json, transaction
 
 
 def append_event(
@@ -31,7 +31,14 @@ def append_event(
                 ON CONFLICT (session_id, step) DO NOTHING
                 RETURNING id;
                 """,
-                (session_id, step, user_input, choice_id, llm_json, deltas_json),
+                (
+                    session_id,
+                    step,
+                    user_input,
+                    choice_id,
+                    to_json(llm_json),
+                    to_json(deltas_json),
+                ),
             )
             row = cur.fetchone()
             return "inserted" if row else "duplicate"

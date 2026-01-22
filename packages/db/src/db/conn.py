@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from typing import Iterator
 
 from psycopg import Connection
+from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
 _DB_URL_ENV = "DB_URL"
@@ -23,6 +24,14 @@ def get_pool() -> ConnectionPool:
     if _pool is None:
         _pool = ConnectionPool(conninfo=_get_db_url(), min_size=1, max_size=5, open=True)
     return _pool
+
+
+def to_json(value: object | None) -> Json | None:
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return Json(value)
+    return Json(value)
 
 
 @contextmanager

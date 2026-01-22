@@ -4,7 +4,7 @@ from typing import Any
 
 from psycopg.rows import dict_row
 
-from db.conn import transaction
+from db.conn import to_json, transaction
 from db.repos import users
 
 _DEFAULT_KIND = "GENERIC"
@@ -37,7 +37,7 @@ def create(
                 VALUES (%s, %s, %s, %s, %s, now() + (%s * interval '1 second'))
                 ON CONFLICT (rid8) DO NOTHING;
                 """,
-                (user_id, tg_id, rid8, _DEFAULT_KIND, payload, ttl_sec),
+                (user_id, tg_id, rid8, _DEFAULT_KIND, to_json(payload), ttl_sec),
             )
 
 

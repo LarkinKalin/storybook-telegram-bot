@@ -3,7 +3,7 @@ from __future__ import annotations
 from time import time
 
 from aiogram import Router
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
@@ -377,8 +377,7 @@ async def on_start(message: Message, state: FSMContext) -> None:
     await open_l1(message, state)
 
 
-@router.message(UX.l1)
-async def l1_any(message: Message, state: FSMContext) -> None:
+async def _handle_l1_text(message: Message, state: FSMContext) -> None:
     """
     UX-правило:
     - ReplyKeyboard = текст.
@@ -460,3 +459,14 @@ async def l1_any(message: Message, state: FSMContext) -> None:
         "🏠 Главное меню",
         reply_markup=build_l1_keyboard(has_active(message.from_user.id)),
     )
+
+
+@router.message(StateFilter(None))
+async def l1_any_default(message: Message, state: FSMContext) -> None:
+    await state.set_state(UX.l1)
+    await _handle_l1_text(message, state)
+
+
+@router.message(UX.l1)
+async def l1_any(message: Message, state: FSMContext) -> None:
+    await _handle_l1_text(message, state)

@@ -54,3 +54,4 @@
 
 2026-01-22 | TG.3.2.01 | DONE | DB schema fixed via SQL migrations: users/sessions/session_events/payments/confirm_requests/usage_windows/ui_events (+ indexes/constraints)
 2026-01-22 | TG.3.4.01 | DONE | DB access layer: repos for users/sessions/events/payments/confirm/ui_events/usage_windows (+ smoke check)
+2026-01-22 | TG.3.5.01 | DONE | TG bot uses Postgres for runtime sessions (1 ACTIVE enforced); resume/status/confirm read/write DB; survives restart

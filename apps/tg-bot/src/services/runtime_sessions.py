@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
+
+from db.repos import sessions, users
 
 SessionStatus = Literal["ACTIVE", "FINISHED", "ABORTED"]
 
 
 @dataclass
 class Session:
+    id: int
     tg_id: int
     status: SessionStatus
     theme_id: str | None
@@ -17,47 +21,67 @@ class Session:
     last_step_sent_at: int | None
 
 
-_sessions: dict[int, Session] = {}
+def _to_epoch(value: datetime | int | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return int(value.timestamp())
+    return int(value)
+
+
+def _row_to_session(row: dict | None) -> Session | None:
+    if not row:
+        return None
+    return Session(
+        id=int(row["id"]),
+        tg_id=int(row["tg_id"]),
+        status=row["status"],
+        theme_id=row["theme_id"],
+        step=int(row.get("step", 0)),
+        max_steps=int(row.get("max_steps", 1)),
+        last_step_message_id=row.get("last_step_message_id"),
+        last_step_sent_at=_to_epoch(row.get("last_step_sent_at")),
+    )
+
+
+def _get_user_id(tg_id: int) -> int:
+    user = users.get_or_create_by_tg_id(tg_id)
+    return int(user["id"])
 
 
 def get_session(tg_id: int) -> Session | None:
-    return _sessions.get(tg_id)
+    user_id = _get_user_id(tg_id)
+    row = sessions.get_active(user_id)
+    return _row_to_session(row)
 
 
 def has_active(tg_id: int) -> bool:
-    session = _sessions.get(tg_id)
-    return session is not None and session.status == "ACTIVE"
+    return get_session(tg_id) is not None
 
 
 def start_session(tg_id: int, theme_id: str | None, max_steps: int = 1) -> Session:
-    session = Session(
-        tg_id=tg_id,
-        status="ACTIVE",
-        theme_id=theme_id,
-        step=0,
-        max_steps=max_steps,
-        last_step_message_id=None,
-        last_step_sent_at=None,
-    )
-    _sessions[tg_id] = session
+    user_id = _get_user_id(tg_id)
+    row = sessions.create_new_active(user_id, theme_id, meta={"max_steps": max_steps})
+    session = _row_to_session(row)
+    if session is None:
+        raise RuntimeError("Failed to start session")
     return session
 
 
 def finish_session(tg_id: int) -> None:
-    session = _sessions.get(tg_id)
+    session = get_session(tg_id)
     if session:
-        session.status = "FINISHED"
+        sessions.finish(session.id, status="FINISHED")
 
 
 def abort_session(tg_id: int) -> None:
-    session = _sessions.get(tg_id)
+    session = get_session(tg_id)
     if session:
-        session.status = "ABORTED"
+        sessions.finish(session.id, status="ABORTED")
 
 
 def touch_last_step(tg_id: int, message_id: int, sent_at: int) -> None:
-    session = _sessions.get(tg_id)
+    session = get_session(tg_id)
     if not session:
         return
-    session.last_step_message_id = message_id
-    session.last_step_sent_at = sent_at
+    sessions.update_last_step(session.id, message_id, sent_at)

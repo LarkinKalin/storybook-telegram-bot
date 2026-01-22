@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from time import time
 
 from aiogram import Router
@@ -10,17 +11,19 @@ from src.keyboards.l1 import build_l1_keyboard
 from src.keyboards.l2 import build_l2_keyboard
 from src.keyboards.l3 import build_l3_keyboard
 from src.keyboards.confirm import build_new_story_confirm_keyboard
-from src.services.runtime_sessions import (
-    finish_session,
-    get_session,
-    has_active,
-    start_session,
-    touch_last_step,
-)
+from src.services.runtime_sessions import get_session, has_active, start_session, touch_last_step
 from src.services.theme_registry import registry
 from src.states import L3, UX
 
 router = Router(name="l2")
+logger = logging.getLogger(__name__)
+
+
+async def _handle_db_error(message: Message, state: FSMContext) -> None:
+    logger.exception("DB operation failed")
+    await message.answer("⚠️ База данных временно недоступна. Попробуй позже.")
+    await state.set_state(UX.l1)
+    await message.answer("🏠 Главное меню", reply_markup=build_l1_keyboard(False))
 
 
 async def open_l2(message: Message, state: FSMContext, page_index: int = 0) -> None:
@@ -56,9 +59,15 @@ async def on_menu(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer()
         return
     await state.set_state(UX.l1)
+    try:
+        active = has_active(callback.from_user.id)
+    except Exception:
+        await _handle_db_error(callback.message, state)
+        await callback.answer()
+        return
     await callback.message.answer(
         "🏠 Главное меню",
-        reply_markup=build_l1_keyboard(has_active(callback.from_user.id)),
+        reply_markup=build_l1_keyboard(active),
     )
     await callback.answer()
 
@@ -99,7 +108,13 @@ async def on_theme(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Тема устарела")
         await _render_l2(callback.message, 0, edit=True)
         return
-    if has_active(callback.from_user.id):
+    try:
+        active = has_active(callback.from_user.id)
+    except Exception:
+        await _handle_db_error(callback.message, state)
+        await callback.answer()
+        return
+    if active:
         confirm_text = (
             "У тебя уже идёт сказка. Начать новую? Старая будет завершена."
         )
@@ -128,7 +143,12 @@ async def on_new_story_confirm(callback: CallbackQuery, state: FSMContext) -> No
         await callback.answer("Тема устарела")
         await _render_l2(callback.message, 0, edit=True)
         return
-    session = get_session(callback.from_user.id)
+    try:
+        session = get_session(callback.from_user.id)
+    except Exception:
+        await _handle_db_error(callback.message, state)
+        await callback.answer()
+        return
     if session and session.last_step_message_id:
         try:
             await callback.message.bot.edit_message_reply_markup(
@@ -138,7 +158,6 @@ async def on_new_story_confirm(callback: CallbackQuery, state: FSMContext) -> No
             )
         except Exception:
             pass
-    finish_session(callback.from_user.id)
     await _start_theme_session(callback.message, state, callback.from_user.id, theme)
     await callback.answer()
 
@@ -147,7 +166,11 @@ async def _start_theme_session(
     message: Message, state: FSMContext, tg_id: int, theme: dict[str, str]
 ) -> None:
     await state.update_data(theme_id=theme["id"], style_id=theme["style_default"])
-    start_session(tg_id, theme["id"], max_steps=1)
+    try:
+        start_session(tg_id, theme["id"], max_steps=1)
+    except Exception:
+        await _handle_db_error(message, state)
+        return
     step_text = f"Шаг 1/1. Тема: {theme['title']}. История появится в следующем квесте."
     sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
     step_message = sent_message
@@ -167,5 +190,9 @@ async def _start_theme_session(
         except Exception:
             pass
         step_message = await message.answer(step_text, reply_markup=build_l3_keyboard())
-    touch_last_step(tg_id, step_message.message_id, int(time()))
+    try:
+        touch_last_step(tg_id, step_message.message_id, int(time()))
+    except Exception:
+        await _handle_db_error(message, state)
+        return
     await state.set_state(L3.STEP)

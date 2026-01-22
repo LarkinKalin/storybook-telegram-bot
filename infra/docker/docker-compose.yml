@@ -1,8 +1,8 @@
 services:
   tg-bot:
     build:
-      context: ../../apps/tg-bot
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/tg-bot/Dockerfile
     container_name: skazka-tg-bot
     env_file:
       - /etc/skazka/skazka.env

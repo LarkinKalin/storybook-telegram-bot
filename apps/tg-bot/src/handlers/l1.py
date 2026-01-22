@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from time import time
 
 from aiogram import Router
@@ -14,11 +15,13 @@ from src.keyboards.l3 import build_l3_keyboard
 from src.keyboards.settings import build_settings_keyboard
 from src.keyboards.shop import build_shop_keyboard
 from src.keyboards.why import build_why_keyboard
+from db.repos import session_events, sessions as sessions_repo
 from src.services.runtime_sessions import abort_session, get_session, has_active, touch_last_step
 from src.services.theme_registry import registry
 from src.states import L3, L4, L5, UX
 
 router = Router(name="l1")
+logger = logging.getLogger(__name__)
 
 # Алиасы команд (slash) -> кнопка L1
 # Важно: алиасы делаем БЕЗ эмодзи, чтобы человек мог набрать руками.
@@ -118,9 +121,14 @@ async def open_l1(message: Message, state: FSMContext, user_id: int | None = Non
     tg_id = user_id if user_id is not None else message.from_user.id
 
     await state.set_state(UX.l1)
+    try:
+        active = has_active(tg_id)
+    except Exception:
+        logger.exception("Failed to load active session")
+        active = False
     await message.answer(
         "🏠 Главное меню",
-        reply_markup=build_l1_keyboard(has_active(tg_id)),
+        reply_markup=build_l1_keyboard(active),
     )
 
 
@@ -178,10 +186,19 @@ async def _send_settings_screen(message: Message) -> None:
     )
 
 
+async def _handle_db_error(message: Message, state: FSMContext) -> None:
+    logger.exception("DB operation failed")
+    await message.answer("⚠️ База данных временно недоступна. Попробуй позже.")
+    await state.set_state(UX.l1)
+    await message.answer("🏠 Главное меню", reply_markup=build_l1_keyboard(False))
+
+
 def _is_session_valid(session: object) -> bool:
     if not session:
         return False
     if getattr(session, "theme_id", None) is None:
+        return False
+    if getattr(session, "id", None) is None:
         return False
     step = getattr(session, "step", None)
     max_steps = getattr(session, "max_steps", None)
@@ -216,14 +233,23 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
 
     tg_id = user_id if user_id is not None else message.from_user.id
 
-    if not has_active(tg_id):
+    try:
+        session = get_session(tg_id)
+    except Exception:
+        await _handle_db_error(message, state)
+        return
+
+    if not session:
         await message.answer("Нет активной сказки. Нажми ▶ Начать сказку.")
         await open_l1(message, state, user_id=tg_id)
         return
 
-    session = get_session(tg_id)
     if not _is_session_valid(session):
-        abort_session(tg_id)
+        try:
+            abort_session(tg_id)
+        except Exception:
+            await _handle_db_error(message, state)
+            return
         await message.answer("Сессия потерялась. Начни заново.")
         await open_l1(message, state, user_id=tg_id)
         return
@@ -271,7 +297,11 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
         except Exception:
             pass
         step_message = await message.answer(step_text, reply_markup=build_l3_keyboard())
-    touch_last_step(tg_id, step_message.message_id, now_ts)
+    try:
+        touch_last_step(tg_id, step_message.message_id, now_ts)
+    except Exception:
+        await _handle_db_error(message, state)
+        return
     await state.set_state(L3.STEP)
 
 
@@ -286,8 +316,12 @@ async def on_status(message: Message, state: FSMContext) -> None:
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
         return
 
-    session = get_session(message.from_user.id)
-    active = has_active(message.from_user.id)
+    try:
+        session = get_session(message.from_user.id)
+    except Exception:
+        await _handle_db_error(message, state)
+        return
+    active = session is not None
     screen = await _screen_label(state)
     lines = [f"active: {'yes' if active else 'no'}"]
     lines.append(f"screen: {screen}")
@@ -304,7 +338,11 @@ async def on_status(message: Message, state: FSMContext) -> None:
         lines.append("step_ui: unknown")
         lines.append("max_steps: unknown")
         lines.append("theme: unknown")
-        abort_session(message.from_user.id)
+        try:
+            abort_session(message.from_user.id)
+        except Exception:
+            await _handle_db_error(message, state)
+            return
     await message.answer("\n".join(lines))
 
 
@@ -353,9 +391,31 @@ async def on_go_help(callback: CallbackQuery, state: FSMContext) -> None:
 @router.message(L4.HELP)
 @router.message(L4.SHOP)
 @router.message(L4.SETTINGS)
-async def on_inline_screen_text(message: Message) -> None:
+async def on_inline_screen_text(message: Message, state: FSMContext) -> None:
     if not message.text:
         return
+    if await state.get_state() == L3.STEP:
+        try:
+            session = get_session(message.from_user.id)
+        except Exception:
+            await _handle_db_error(message, state)
+            return
+        if session and _is_session_valid(session):
+            step_value = session.step + 1
+            try:
+                status = session_events.append_event(
+                    session.id,
+                    step=step_value,
+                    user_input=message.text,
+                    choice_id=None,
+                    llm_json=None,
+                    deltas_json=None,
+                )
+                if status == "inserted":
+                    sessions_repo.update_step(session.id, step_value)
+            except Exception:
+                await _handle_db_error(message, state)
+                return
     await message.answer("Сейчас жми кнопки. Если потерялся, нажми ⬅ В меню.")
 
 
@@ -401,10 +461,12 @@ async def _handle_l1_text(message: Message, state: FSMContext) -> None:
     """
     if not message.text:
         await message.answer("Мне нужен текст или кнопки. Остальное я не ем.")
-        await message.answer(
-            "🏠 Главное меню",
-            reply_markup=build_l1_keyboard(has_active(message.from_user.id)),
-        )
+        try:
+            active = has_active(message.from_user.id)
+        except Exception:
+            logger.exception("Failed to load active session")
+            active = False
+        await message.answer("🏠 Главное меню", reply_markup=build_l1_keyboard(active))
         return
 
     raw = message.text.strip()
@@ -420,10 +482,12 @@ async def _handle_l1_text(message: Message, state: FSMContext) -> None:
                 await message.answer(
                     "Похоже, ты имел в виду:\n" + "\n".join(f"• {s}" for s in suggestions)
                 )
-                await message.answer(
-                    "🏠 Главное меню",
-                    reply_markup=build_l1_keyboard(has_active(message.from_user.id)),
-                )
+                try:
+                    active = has_active(message.from_user.id)
+                except Exception:
+                    logger.exception("Failed to load active session")
+                    active = False
+                await message.answer("🏠 Главное меню", reply_markup=build_l1_keyboard(active))
                 return
 
     text = normalize_l1_input(raw)
@@ -469,10 +533,12 @@ async def _handle_l1_text(message: Message, state: FSMContext) -> None:
 
     # 2) Потом: "произвольный" неизвестный ввод
     await message.answer("Не понял. Используй кнопки меню или команды /start /help.")
-    await message.answer(
-        "🏠 Главное меню",
-        reply_markup=build_l1_keyboard(has_active(message.from_user.id)),
-    )
+    try:
+        active = has_active(message.from_user.id)
+    except Exception:
+        logger.exception("Failed to load active session")
+        active = False
+    await message.answer("🏠 Главное меню", reply_markup=build_l1_keyboard(active))
 
 
 @router.message(StateFilter(None))

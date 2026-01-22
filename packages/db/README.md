@@ -7,7 +7,7 @@
 **Apply:** use your standard compose/psql/runner workflow (no inline commands here by policy).
 
 **Spec:** “DB Schema v0.1 — Field Spec (FINAL)”.
-
+**Canonical spec:** packages/db/SCHEMA_v0_1.md
 ## Tables overview
 
 - `users`: Telegram users, subscription plan metadata, and audit timestamps.

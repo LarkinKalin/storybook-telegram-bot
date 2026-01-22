@@ -1,0 +1,4 @@
+cd /srv/git/skazka/infra/docker
+docker compose build --no-cache tg-bot
+docker compose up -d tg-bot
+docker compose logs tg-bot --tail=120

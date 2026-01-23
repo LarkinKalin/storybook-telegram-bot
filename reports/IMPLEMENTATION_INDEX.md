@@ -41,3 +41,4 @@ TG.2.2.01+TG.2.3.01 — runnable tg-bot in docker compose (/start OK) — 2026-0
 
 2026-01-23 | TG.4.1.01 | DONE | Engine v0.1 (pure library) in packages/engine + pytest setup
 2026-01-23 | TG.4.1.02 | DONE | Engine v0.1 free-text classifier plumbing (confidence/safety neutral rules)
+2026-01-23 | TG.4.1.02 | DONE | Engine v0.1: free-text classifier gating + tests | commit 44bb388

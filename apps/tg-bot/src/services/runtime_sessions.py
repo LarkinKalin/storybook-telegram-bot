@@ -76,6 +76,7 @@ def start_session(tg_id: int, theme_id: str | None, max_steps: int = 1) -> Sessi
 
         engine_state = init_state_v01(max_steps)
         sessions.update_params_json(session.id, engine_state)
+        sessions.update_step(session.id, engine_state["step0"])
     return session
 
 

@@ -15,6 +15,13 @@ PYTHONPATH=apps/tg-bot:packages/db/src TG_ID=999000 python apps/tg-bot/scripts/t
 This creates a session, applies three turns (A/B/C), and prints the resulting
 `sessions.params_json`, `sessions.ending_id`, and `session_events` rows.
 
+Run inside the container:
+
+```bash
+docker compose -f infra/docker/docker-compose.yml exec tg-bot \
+  sh -lc "TG_ID=999000 python /app/apps/tg-bot/scripts/tg_4_2_01_smoke.py"
+```
+
 ## Docker compose note
 The tg-bot service does not bind-mount source code; after code changes run:
 

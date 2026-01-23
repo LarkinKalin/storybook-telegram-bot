@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+import json
+
 from db.conn import transaction
 from db.repos import sessions, users
 from src.services.runtime_sessions import start_session
@@ -20,7 +22,9 @@ def _print_db_state(session_id: int) -> None:
                 (session_id,),
             )
             row = cur.fetchone()
-            print("session:", row)
+            params_json = row[0] if row else {}
+            ending_id = row[1] if row else None
+            step = row[2] if row else None
             cur.execute(
                 """
                 SELECT step, choice_id, user_input, llm_json, deltas_json
@@ -31,7 +35,21 @@ def _print_db_state(session_id: int) -> None:
                 (session_id,),
             )
             events = cur.fetchall()
-            print("events:", events)
+            step0 = None
+            if isinstance(params_json, dict):
+                step0 = params_json.get("step0")
+            print(
+                json.dumps(
+                    {
+                        "session_id": session_id,
+                        "step0": step0,
+                        "ending_id": ending_id,
+                        "db_step": step,
+                        "events_count": len(events),
+                    },
+                    ensure_ascii=False,
+                )
+            )
 
 
 def main() -> None:

@@ -7,8 +7,9 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY apps/tg-bot/src/ /app/src/
 COPY packages/db/src/ /app/packages/db/src/
+COPY packages/engine/ /app/packages/engine/
 
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app/src:/app/packages/db/src
+ENV PYTHONPATH=/app:/app/src:/app/packages/db/src
 
 CMD ["python", "-m", "src.bot_app"]

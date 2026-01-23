@@ -80,10 +80,11 @@ def clamp_trait(value: int) -> int:
 
 
 def normalize_deltas(
-    deltas: List[Delta], step_type: str, is_choice: bool
+    deltas: List[Delta], step_type: str, is_choice: bool, confidence: Optional[float]
 ) -> Tuple[List[Delta], bool]:
     original = copy.deepcopy(deltas)
     normalized: List[Delta] = []
+    negative_core_used = False
     for delta in deltas[:2]:
         value = int(delta["delta"])
         trait = delta["trait"]
@@ -91,8 +92,21 @@ def normalize_deltas(
             value = 2
         if value < -2:
             value = -2
-        if is_choice and trait in CORE_TRAITS and value < 0:
-            value = 0
+        if trait in CORE_TRAITS and value < 0:
+            if is_choice or step_type == "NORMAL":
+                value = 0
+            elif step_type == "SEMI":
+                if confidence is None or confidence < 0.75 or negative_core_used:
+                    value = 0
+                else:
+                    value = -1
+                    negative_core_used = True
+            elif step_type == "HEAVY":
+                if confidence is None or confidence < 0.80 or negative_core_used:
+                    value = 0
+                else:
+                    value = -2 if value <= -2 else -1
+                    negative_core_used = True
         normalized.append({"trait": trait, "delta": value})
 
     limit = STEP_LIMITS[step_type]
@@ -237,6 +251,7 @@ def apply_turn(
     turn_kind = turn.get("kind")
     choice_id = turn.get("choice_id") if turn_kind == "choice" else None
     text = turn.get("text") if turn_kind == "free_text" else None
+    classifier_result = turn.get("classifier_result") if turn_kind == "free_text" else None
 
     noise_input = False
     if turn_kind == "free_text":
@@ -244,7 +259,22 @@ def apply_turn(
         if noise_input:
             neutral_reason = "noise_input"
         else:
-            neutral_reason = "parse_fail"
+            if not isinstance(classifier_result, dict):
+                neutral_reason = "safety_unclear"
+            else:
+                confidence = float(classifier_result.get("confidence", 0.0))
+                safety = classifier_result.get("safety", "unclear")
+                if confidence < 0.65:
+                    neutral_reason = "low_confidence"
+                elif safety == "unclear":
+                    neutral_reason = "safety_unclear"
+                else:
+                    applied_deltas, classifier_delta_clamped = normalize_deltas(
+                        classifier_result.get("deltas", []),
+                        step_type,
+                        False,
+                        confidence,
+                    )
 
     if turn_kind == "choice":
         if not choice_id:
@@ -257,7 +287,7 @@ def apply_turn(
                 content_missing_mapping = True
             else:
                 applied_deltas, content_delta_clamped = normalize_deltas(
-                    choice["deltas"], step_type, True
+                    choice["deltas"], step_type, True, None
                 )
 
     noise_streak_before = old_state["noise_streak"]

@@ -28,6 +28,15 @@ class Turn(TypedDict, total=False):
     kind: str
     choice_id: Optional[str]
     text: Optional[str]
+    classifier_result: Optional["ClassifierResult"]
+
+
+class ClassifierResult(TypedDict, total=False):
+    intent_trait: Optional[str]
+    deltas: List[Delta]
+    confidence: float
+    safety: str
+    tags: List[str]
 
 
 class EngineStateV01(TypedDict):

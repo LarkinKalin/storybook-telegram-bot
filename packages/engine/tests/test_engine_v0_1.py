@@ -174,3 +174,61 @@ def test_determinism_and_json_serializable():
     assert first_log == second_log
     json.dumps(first_state)
     json.dumps(first_log)
+
+
+def test_free_text_low_confidence_neutral():
+    state = init_state_v01(8)
+    content = make_content_step()
+    turn = {
+        "kind": "free_text",
+        "text": "понятный текст",
+        "classifier_result": {
+            "confidence": 0.4,
+            "safety": "clear",
+            "deltas": [{"trait": "t1", "delta": 1}],
+        },
+    }
+    new_state, log = apply_turn(state, turn, content)
+    assert log["neutral_reason"] == "low_confidence"
+    assert log["applied_deltas"] == []
+    assert new_state["traits"] == state["traits"]
+
+
+def test_free_text_safety_unclear_neutral():
+    state = init_state_v01(8)
+    content = make_content_step()
+    turn = {
+        "kind": "free_text",
+        "text": "понятный текст",
+        "classifier_result": {
+            "confidence": 0.9,
+            "safety": "unclear",
+            "deltas": [{"trait": "t1", "delta": 1}],
+        },
+    }
+    new_state, log = apply_turn(state, turn, content)
+    assert log["neutral_reason"] == "safety_unclear"
+    assert log["applied_deltas"] == []
+    assert new_state["traits"] == state["traits"]
+
+
+def test_free_text_high_confidence_applies_deltas_and_clamps():
+    state = init_state_v01(8)
+    content = make_content_step()
+    turn = {
+        "kind": "free_text",
+        "text": "понятный текст",
+        "classifier_result": {
+            "confidence": 0.9,
+            "safety": "clear",
+            "deltas": [
+                {"trait": "t1", "delta": 2},
+                {"trait": "t2", "delta": 2},
+            ],
+        },
+    }
+    new_state, log = apply_turn(state, turn, content)
+    assert log["neutral_reason"] is None
+    assert log["classifier_delta_clamped"] is True
+    assert sum(abs(d["delta"]) for d in log["applied_deltas"]) <= 2
+    assert new_state["traits"]["t1"] + new_state["traits"]["t2"] <= 12

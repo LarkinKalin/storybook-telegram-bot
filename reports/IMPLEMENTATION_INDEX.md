@@ -38,3 +38,5 @@ TG.2.2.01+TG.2.3.01 — runnable tg-bot in docker compose (/start OK) — 2026-0
 
 ## Canon (source of truth)
 - docs/ENGINE_SPEC_v0_1.md — канон engine v0.1 (параметры, вехи, матрицы, финалы)
+
+2026-01-23 | TG.4.1.01 | DONE | Engine v0.1 (pure library) in packages/engine + pytest setup

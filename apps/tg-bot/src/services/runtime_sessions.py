@@ -17,6 +17,9 @@ class Session:
     theme_id: str | None
     step: int
     max_steps: int
+    params_json: dict
+    facts_json: dict
+    ending_id: str | None
     last_step_message_id: int | None
     last_step_sent_at: int | None
 
@@ -39,6 +42,9 @@ def _row_to_session(row: dict | None) -> Session | None:
         theme_id=row["theme_id"],
         step=int(row.get("step", 0)),
         max_steps=int(row.get("max_steps", 1)),
+        params_json=row.get("params_json") or {},
+        facts_json=row.get("facts_json") or {},
+        ending_id=row.get("ending_id"),
         last_step_message_id=row.get("last_step_message_id"),
         last_step_sent_at=_to_epoch(row.get("last_step_sent_at")),
     )
@@ -65,6 +71,11 @@ def start_session(tg_id: int, theme_id: str | None, max_steps: int = 1) -> Sessi
     session = _row_to_session(row)
     if session is None:
         raise RuntimeError("Failed to start session")
+    if not session.params_json or session.params_json.get("v") != "0.1":
+        from packages.engine.src.engine_v0_1 import init_state_v01
+
+        engine_state = init_state_v01(max_steps)
+        sessions.update_params_json(session.id, engine_state)
     return session
 
 

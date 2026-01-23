@@ -9,9 +9,9 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from src.keyboards.l1 import build_l1_keyboard
 from src.keyboards.l2 import build_l2_keyboard
-from src.keyboards.l3 import build_l3_keyboard
 from src.keyboards.confirm import build_new_story_confirm_keyboard
 from src.services.runtime_sessions import get_session, has_active, start_session, touch_last_step
+from src.services.story_runtime import render_step
 from src.services.theme_registry import registry
 from src.states import L3, UX
 
@@ -167,11 +167,20 @@ async def _start_theme_session(
 ) -> None:
     await state.update_data(theme_id=theme["id"], style_id=theme["style_default"])
     try:
-        start_session(tg_id, theme["id"], max_steps=1)
+        start_session(tg_id, theme["id"], max_steps=8)
     except Exception:
         await _handle_db_error(message, state)
         return
-    step_text = f"Шаг 1/1. Тема: {theme['title']}. История появится в следующем квесте."
+    try:
+        session = get_session(tg_id)
+    except Exception:
+        await _handle_db_error(message, state)
+        return
+    if not session:
+        await _handle_db_error(message, state)
+        return
+    step_view = render_step(session.__dict__)
+    step_text = step_view.text
     sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
     step_message = sent_message
     try:
@@ -179,7 +188,7 @@ async def _start_theme_session(
             step_text,
             chat_id=sent_message.chat.id,
             message_id=sent_message.message_id,
-            reply_markup=build_l3_keyboard(),
+            reply_markup=step_view.keyboard,
         )
     except Exception:
         try:
@@ -189,7 +198,7 @@ async def _start_theme_session(
             )
         except Exception:
             pass
-        step_message = await message.answer(step_text, reply_markup=build_l3_keyboard())
+        step_message = await message.answer(step_text, reply_markup=step_view.keyboard)
     try:
         touch_last_step(tg_id, step_message.message_id, int(time()))
     except Exception:

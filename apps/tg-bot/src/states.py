@@ -8,6 +8,7 @@ class UX(StatesGroup):
 
 class L3(StatesGroup):
     STEP = State()
+    FREE_TEXT = State()
 
 
 class L4(StatesGroup):

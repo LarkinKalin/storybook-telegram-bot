@@ -42,3 +42,34 @@ def append_event(
             )
             row = cur.fetchone()
             return "inserted" if row else "duplicate"
+
+
+def exists_for_step(session_id: int, step: int) -> bool:
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                FROM session_events
+                WHERE session_id = %s AND step = %s
+                LIMIT 1;
+                """,
+                (session_id, step),
+            )
+            return cur.fetchone() is not None
+
+
+def exists_for_fingerprint(session_id: int, fingerprint: str) -> bool:
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                FROM session_events
+                WHERE session_id = %s
+                  AND llm_json ->> 'turn_fingerprint' = %s
+                LIMIT 1;
+                """,
+                (session_id, fingerprint),
+            )
+            return cur.fetchone() is not None

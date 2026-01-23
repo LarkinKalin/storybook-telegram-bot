@@ -50,3 +50,4 @@
 2026-01-20 | TG.2.1.05 | DONE | Runtime sessions (ACTIVE/FINISHED/ABORTED), L3 inline-only step, resume/status/help/shop flows, theme pick gating by active session
 2026-01-20 | TG.2.3.02A | DONE | L2 active-story confirm: add ⬅ Назад to return to theme list without changing session
 2026-01-22 | TG.3.5.01 | DONE | TG bot uses Postgres for runtime sessions (1 ACTIVE enforced); resume/status/confirm read/write DB; survives restart
+2026-01-23 | TG.4.2.01 | DONE | L3 inline runtime: engine apply_turn + params_json persistence + session_events step logs + final save (no LLM), anti-stale + fingerprint dedupe

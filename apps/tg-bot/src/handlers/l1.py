@@ -11,12 +11,11 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from src.handlers.l2 import open_l2
 from src.keyboards.l1 import L1Label, build_l1_keyboard
 from src.keyboards.help import build_help_keyboard
-from src.keyboards.l3 import build_l3_keyboard
 from src.keyboards.settings import build_settings_keyboard
 from src.keyboards.shop import build_shop_keyboard
 from src.keyboards.why import build_why_keyboard
-from db.repos import session_events, sessions as sessions_repo
 from src.services.runtime_sessions import abort_session, get_session, has_active, touch_last_step
+from src.services.story_runtime import advance_turn, render_step
 from src.services.theme_registry import registry
 from src.states import L3, L4, L5, UX
 
@@ -269,16 +268,8 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
         except Exception:
             pass
 
-    theme_title = session.theme_id
-    theme = registry.get_theme(session.theme_id) if session.theme_id else None
-    if theme:
-        theme_title = theme["title"]
-
-    step_ui = session.step + 1
-    step_text = (
-        f"Продолжаем: Шаг {step_ui}/{session.max_steps}. "
-        f"Тема: {theme_title}. История появится в следующем квесте."
-    )
+    step_view = render_step(session.__dict__)
+    step_text = step_view.text
     sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
     step_message = sent_message
     try:
@@ -286,7 +277,7 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
             step_text,
             chat_id=sent_message.chat.id,
             message_id=sent_message.message_id,
-            reply_markup=build_l3_keyboard(),
+            reply_markup=step_view.keyboard,
         )
     except Exception:
         try:
@@ -296,7 +287,7 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
             )
         except Exception:
             pass
-        step_message = await message.answer(step_text, reply_markup=build_l3_keyboard())
+        step_message = await message.answer(step_text, reply_markup=step_view.keyboard)
     try:
         touch_last_step(tg_id, step_message.message_id, now_ts)
     except Exception:
@@ -395,28 +386,133 @@ async def on_inline_screen_text(message: Message, state: FSMContext) -> None:
     if not message.text:
         return
     if await state.get_state() == L3.STEP:
-        try:
-            session = get_session(message.from_user.id)
-        except Exception:
-            await _handle_db_error(message, state)
-            return
-        if session and _is_session_valid(session):
-            step_value = session.step + 1
-            try:
-                status = session_events.append_event(
-                    session.id,
-                    step=step_value,
-                    user_input=message.text,
-                    choice_id=None,
-                    llm_json=None,
-                    deltas_json=None,
-                )
-                if status == "inserted":
-                    sessions_repo.update_step(session.id, step_value)
-            except Exception:
-                await _handle_db_error(message, state)
-                return
+        await message.answer("Сейчас жми кнопки. Если потерялся, нажми ⬅ В меню.")
+        return
     await message.answer("Сейчас жми кнопки. Если потерялся, нажми ⬅ В меню.")
+
+
+@router.callback_query(lambda query: query.data and query.data.startswith("l3:choice:"))
+async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        await callback.answer()
+        return
+    try:
+        session = get_session(callback.from_user.id)
+    except Exception:
+        await _handle_db_error(callback.message, state)
+        await callback.answer()
+        return
+    if not session or not _is_session_valid(session):
+        await callback.answer("Сессия устарела. Нажми /resume.")
+        return
+    if session.last_step_message_id and callback.message.message_id != session.last_step_message_id:
+        await callback.answer("Шаг устарел, нажми /resume.")
+        return
+    choice_id = callback.data.split(":", 2)[2]
+    turn = {"kind": "choice", "choice_id": choice_id}
+    try:
+        step_view = advance_turn(
+            session.__dict__, turn, source_message_id=callback.message.message_id
+        )
+    except Exception:
+        await _handle_db_error(callback.message, state)
+        await callback.answer()
+        return
+    if step_view is None:
+        await callback.answer("Этот шаг уже обработан. Нажми /resume.")
+        return
+    sent_message = await callback.message.answer("...", reply_markup=ReplyKeyboardRemove())
+    step_message = sent_message
+    try:
+        await callback.message.bot.edit_message_text(
+            step_view.text,
+            chat_id=sent_message.chat.id,
+            message_id=sent_message.message_id,
+            reply_markup=step_view.keyboard,
+        )
+    except Exception:
+        try:
+            await callback.message.bot.delete_message(
+                chat_id=sent_message.chat.id,
+                message_id=sent_message.message_id,
+            )
+        except Exception:
+            pass
+        step_message = await callback.message.answer(
+            step_view.text, reply_markup=step_view.keyboard
+        )
+    try:
+        touch_last_step(callback.from_user.id, step_message.message_id, int(time()))
+    except Exception:
+        await _handle_db_error(callback.message, state)
+        await callback.answer()
+        return
+    await state.set_state(L3.STEP)
+    await callback.answer()
+
+
+@router.callback_query(lambda query: query.data == "l3:free_text")
+async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+    await state.set_state(L3.FREE_TEXT)
+    await callback.message.answer(
+        "Напиши свой вариант текста. Я запомню его как ход.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await callback.answer()
+
+
+@router.message(L3.FREE_TEXT)
+async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
+    if not message.text:
+        return
+    try:
+        session = get_session(message.from_user.id)
+    except Exception:
+        await _handle_db_error(message, state)
+        return
+    if not session or not _is_session_valid(session):
+        await message.answer("Сессия устарела. Нажми /resume.")
+        return
+    turn = {"kind": "free_text", "text": message.text}
+    try:
+        step_view = advance_turn(
+            session.__dict__, turn, source_message_id=message.message_id
+        )
+    except Exception:
+        await _handle_db_error(message, state)
+        return
+    if step_view is None:
+        await message.answer("Этот шаг уже обработан. Нажми /resume.")
+        return
+    sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
+    step_message = sent_message
+    try:
+        await message.bot.edit_message_text(
+            step_view.text,
+            chat_id=sent_message.chat.id,
+            message_id=sent_message.message_id,
+            reply_markup=step_view.keyboard,
+        )
+    except Exception:
+        try:
+            await message.bot.delete_message(
+                chat_id=sent_message.chat.id,
+                message_id=sent_message.message_id,
+            )
+        except Exception:
+            pass
+        step_message = await message.answer(
+            step_view.text, reply_markup=step_view.keyboard
+        )
+    try:
+        touch_last_step(message.from_user.id, step_message.message_id, int(time()))
+    except Exception:
+        await _handle_db_error(message, state)
+        return
+    await state.set_state(L3.STEP)
 
 
 @router.callback_query(lambda query: query.data == "go:shop")

@@ -161,3 +161,49 @@ def update_step(session_id: int, step: int) -> None:
                 """,
                 (step, session_id),
             )
+
+
+def update_params_json(session_id: int, params_json: dict[str, Any]) -> None:
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE sessions
+                SET params_json = %s, updated_at = now()
+                WHERE id = %s;
+                """,
+                (to_json(params_json), session_id),
+            )
+
+
+def update_facts_json(session_id: int, facts_json: dict[str, Any]) -> None:
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE sessions
+                SET facts_json = %s, updated_at = now()
+                WHERE id = %s;
+                """,
+                (to_json(facts_json), session_id),
+            )
+
+
+def finish_with_final(
+    session_id: int,
+    final_id: str,
+    final_meta: dict[str, Any],
+) -> None:
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE sessions
+                SET status = 'FINISHED',
+                    ending_id = %s,
+                    facts_json = %s,
+                    updated_at = now()
+                WHERE id = %s;
+                """,
+                (final_id, to_json({"final_meta": final_meta}), session_id),
+            )

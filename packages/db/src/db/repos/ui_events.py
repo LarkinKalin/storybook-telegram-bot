@@ -29,7 +29,11 @@ def insert_idempotent(
                     pending_since
                 )
                 VALUES (%s, %s, %s, %s, 'PENDING', now())
-                ON CONFLICT (session_id, step, kind, content_hash) DO NOTHING
+                ON CONFLICT (session_id, step, kind)
+                DO UPDATE SET content_hash = EXCLUDED.content_hash,
+                              state = 'PENDING',
+                              pending_since = now(),
+                              updated_at = now()
                 RETURNING id;
                 """,
                 (session_id, step, kind, content_hash),
@@ -63,10 +67,9 @@ def acquire_event(
                 WHERE session_id = %s
                   AND step = %s
                   AND kind = %s
-                  AND content_hash = %s
                 FOR UPDATE;
                 """,
-                (session_id, step, kind, content_hash),
+                (session_id, step, kind),
             )
             row = cur.fetchone()
             if not row:
@@ -108,10 +111,11 @@ def acquire_event(
                         pending_since = NULL,
                         fail_count = %s,
                         next_retry_at = %s,
+                        content_hash = %s,
                         updated_at = now()
                     WHERE id = %s;
                     """,
-                    (fail_count, retry_at, row["id"]),
+                    (fail_count, retry_at, content_hash, row["id"]),
                 )
                 state = "FAILED"
                 next_retry_at = retry_at
@@ -125,10 +129,11 @@ def acquire_event(
                     SET state = 'PENDING',
                         pending_since = now(),
                         next_retry_at = NULL,
+                        content_hash = %s,
                         updated_at = now()
                     WHERE id = %s;
                     """,
-                    (row["id"],),
+                    (content_hash, row["id"]),
                 )
                 return {"decision": "show", "event_id": int(row["id"])}
 

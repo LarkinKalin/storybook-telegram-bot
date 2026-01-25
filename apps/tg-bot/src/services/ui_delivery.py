@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from time import time
 from typing import Literal
 
+from aiogram import Bot
 from aiogram.types import Message, ReplyKeyboardRemove
 
 from db.repos import sessions, ui_events
@@ -109,3 +110,40 @@ async def deliver_step_view(
 
 def mark_delivery_failed(event_id: int) -> None:
     ui_events.mark_failed(event_id)
+
+
+async def deliver_step_lock(
+    *,
+    bot: Bot,
+    chat_id: int,
+    message_id: int,
+    session_id: int,
+    step: int,
+    kind: str = "step_locked",
+) -> bool:
+    content_hash_value = content_hash(theme_id=None, text=str(message_id))
+    acquire = acquire_step_event(
+        session_id=session_id,
+        step=step,
+        kind=kind,
+        content_hash_value=content_hash_value,
+    )
+    if acquire.decision != "show" or acquire.event_id is None:
+        return False
+    try:
+        await bot.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=None,
+        )
+    except Exception:
+        try:
+            ui_events.mark_failed(acquire.event_id)
+        except Exception:
+            pass
+        return False
+    try:
+        ui_events.mark_shown(acquire.event_id, step_message_id=message_id)
+    except Exception:
+        return True
+    return True

@@ -68,6 +68,16 @@ def get_session_by_sid8(tg_id: int, sid8: str) -> Session | None:
     return _row_to_session(row)
 
 
+def is_step_current(tg_id: int, sid8: str, step: int) -> bool:
+    from db.conn import transaction
+
+    with transaction() as conn:
+        row = sessions.get_by_tg_id_sid8_for_update(conn, tg_id=tg_id, sid8=sid8)
+        if not row:
+            return False
+        return int(row.get("step", 0)) == int(step)
+
+
 def has_active(tg_id: int) -> bool:
     return get_session(tg_id) is not None
 

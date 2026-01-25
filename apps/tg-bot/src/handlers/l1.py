@@ -20,10 +20,11 @@ from src.services.runtime_sessions import (
     get_session,
     get_session_by_sid8,
     has_active,
+    is_step_current,
     touch_last_step,
 )
 from src.services.story_runtime import render_step
-from src.services.ui_delivery import deliver_step_view
+from src.services.ui_delivery import deliver_step_lock, deliver_step_view
 from src.services.theme_registry import registry
 from src.states import L3, L4, L5, UX
 
@@ -456,15 +457,15 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         return
     if session.last_step_message_id and callback.message.message_id != session.last_step_message_id:
         logger.info("TG.6.4.02 stale l3 choice (message_id)")
-        await callback.answer("Кнопка устарела. Продолжай в последнем сообщении.")
+        await callback.answer("Ход уже принят. Сообщение устарело.")
         return
     if st2 < session.step:
         logger.info("TG.6.4.02 stale l3 choice (step behind)")
-        await callback.answer("Кнопка устарела. Продолжай в последнем сообщении.")
+        await callback.answer("Ход уже принят. Сообщение устарело.")
         return
     if st2 > session.step:
         logger.info("TG.6.4.02 future l3 choice (step ahead)")
-        await callback.answer("Этот шаг ещё не активен.")
+        await callback.answer("Ход уже принят. Сообщение устарело.")
         return
     turn = {"kind": "choice", "choice_id": choice_id}
     try:
@@ -484,12 +485,19 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         return
     if result.status == "stale":
         logger.info("TG.6.4.02 stale l3 choice (tx)")
-        await callback.answer("Кнопка устарела. Продолжай в последнем сообщении.")
+        await callback.answer("Ход уже принят. Сообщение устарело.")
         return
     if result.status == "duplicate":
         logger.info("TG.6.4.02 duplicate l3 choice")
     else:
         logger.info("TG.6.4.02 accepted l3 choice")
+    await deliver_step_lock(
+        bot=callback.message.bot,
+        chat_id=callback.message.chat.id,
+        message_id=callback.message.message_id,
+        session_id=result.session_id,
+        step=st2,
+    )
     await deliver_step_view(
         message=callback.message,
         step_view=result.step_view,
@@ -524,15 +532,19 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
         return
     if session.last_step_message_id and callback.message.message_id != session.last_step_message_id:
         logger.info("TG.6.4.02 stale l3 free_text (message_id)")
-        await callback.answer("Кнопка устарела. Продолжай в последнем сообщении.")
+        await callback.answer("Ход уже принят. Сообщение устарело.")
         return
     if st2 < session.step:
         logger.info("TG.6.4.02 stale l3 free_text (step behind)")
-        await callback.answer("Кнопка устарела. Продолжай в последнем сообщении.")
+        await callback.answer("Ход уже принят. Сообщение устарело.")
         return
     if st2 > session.step:
         logger.info("TG.6.4.02 future l3 free_text (step ahead)")
-        await callback.answer("Этот шаг ещё не активен.")
+        await callback.answer("Ход уже принят. Сообщение устарело.")
+        return
+    if not is_step_current(callback.from_user.id, sid8, st2):
+        logger.info("TG.6.4.02 stale l3 free_text (step check)")
+        await callback.answer("Ход уже принят. Сообщение устарело.")
         return
     await state.set_state(L3.FREE_TEXT)
     await state.update_data(l3_sid8=sid8, l3_st2=st2)
@@ -552,7 +564,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
     st2 = state_data.get("l3_st2")
     if not sid8 or st2 is None:
         logger.info("TG.6.4.02 outcome=text_ignored_not_awaiting")
-        await message.answer("Кнопка устарела. Продолжай в последнем сообщении.")
+        await message.answer("Ход уже принят. Сообщение устарело.")
         return
     try:
         session = get_session_by_sid8(message.from_user.id, sid8)
@@ -565,11 +577,11 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
     if int(st2) != session.step:
         if int(st2) < session.step:
             logger.info("TG.6.4.02 outcome=text_stale_step_mismatch")
-            await message.answer("Кнопка устарела. Продолжай в последнем сообщении.")
+            await message.answer("Ход уже принят. Сообщение устарело.")
             await _clear_l3_free_text_state(state)
             return
         logger.info("TG.6.4.02 outcome=text_stale_step_mismatch")
-        await message.answer("Этот шаг ещё не активен.")
+        await message.answer("Ход уже принят. Сообщение устарело.")
         await _clear_l3_free_text_state(state)
         return
     turn = {"kind": "free_text", "text": message.text}
@@ -589,7 +601,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         return
     if result.status == "stale":
         logger.info("TG.6.4.02 stale l3 free_text (tx)")
-        await message.answer("Кнопка устарела. Продолжай в последнем сообщении.")
+        await message.answer("Ход уже принят. Сообщение устарело.")
         await _clear_l3_free_text_state(state)
         return
     if result.status == "duplicate":
@@ -597,6 +609,14 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
     else:
         logger.info("TG.6.4.02 accepted l3 free_text")
         logger.info("TG.6.4.02 outcome=accepted_free_text")
+    if session.last_step_message_id:
+        await deliver_step_lock(
+            bot=message.bot,
+            chat_id=message.chat.id,
+            message_id=session.last_step_message_id,
+            session_id=result.session_id,
+            step=int(st2),
+        )
     await deliver_step_view(
         message=message,
         step_view=result.step_view,

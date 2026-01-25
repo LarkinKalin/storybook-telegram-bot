@@ -45,3 +45,4 @@ TG.2.2.01+TG.2.3.01 — runnable tg-bot in docker compose (/start OK) — 2026-0
 YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINAL hardening++): engine independent, strict JSON-only IO, single-retry + exhausted policy, memory clamp, free_text-only guarantee, trace meta with sizes/retry_reason.
 2026-01-25 | TG.6.4.01 | DONE | L3 step runtime: atomic facts + idempotency + ui_events delivery
 2026-01-25 | TG.6.4.02 | DONE | L3 stale/invalid callback handling + ui_events dedup key
+2026-01-25 | TG.6.4.06 | DONE | /resume idempotency: skip duplicate step delivery

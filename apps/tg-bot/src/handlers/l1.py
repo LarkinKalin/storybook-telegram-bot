@@ -263,9 +263,10 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
         return
 
     now_ts = int(time())
-    if session.last_step_sent_at and now_ts - session.last_step_sent_at < 5:
-        await open_l1(message, state, user_id=tg_id)
-        return
+    if session.last_step_message_id and session.last_step_sent_at:
+        if now_ts - session.last_step_sent_at <= 60:
+            logger.info("TG.6.4.06 outcome=resume_duplicate")
+            return
 
     if session.last_step_message_id:
         try:
@@ -302,6 +303,7 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
     except Exception:
         await _handle_db_error(message, state)
         return
+    logger.info("TG.6.4.06 outcome=resume_shown")
     await state.set_state(L3.STEP)
 
 

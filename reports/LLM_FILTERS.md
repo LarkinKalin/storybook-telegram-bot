@@ -1,0 +1,1 @@
+YYYY-MM-DD | TG.5.1.01 | DONE | LLM Contract v0.1 (OpenAI) STORY_STEP (REV2 FINAL hardening++): JSON schema, validation, retry=1, policy after retry exhausted, memory missing clamp=800, free_text-only + anti-soft-lock, sizes observability; raw prompt/response forbidden.

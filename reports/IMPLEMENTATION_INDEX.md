@@ -42,3 +42,4 @@ TG.2.2.01+TG.2.3.01 — runnable tg-bot in docker compose (/start OK) — 2026-0
 2026-01-23 | TG.4.1.01 | DONE | Engine v0.1 (pure library) in packages/engine + pytest setup
 2026-01-23 | TG.4.1.02 | DONE | Engine v0.1 free-text classifier plumbing (confidence/safety neutral rules)
 2026-01-23 | TG.4.2.01 | DONE | L3 runtime loop wired to Engine v0.1 + Postgres (params_json/session_events/final), inline-only without LLM
+YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINAL hardening++): engine independent, strict JSON-only IO, single-retry + exhausted policy, memory clamp, free_text-only guarantee, trace meta with sizes/retry_reason.

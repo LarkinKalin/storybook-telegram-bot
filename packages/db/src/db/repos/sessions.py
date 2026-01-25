@@ -4,6 +4,7 @@ import secrets
 import string
 from typing import Any
 
+from psycopg import Connection
 from psycopg.rows import dict_row
 
 from db.conn import to_json, transaction
@@ -31,6 +32,41 @@ def get_active(user_id: int) -> dict[str, Any] | None:
             )
             row = cur.fetchone()
             return dict(row) if row else None
+
+
+def get_by_tg_id_sid8(tg_id: int, sid8: str) -> dict[str, Any] | None:
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM sessions
+                WHERE tg_id = %s AND sid8 = %s
+                LIMIT 1;
+                """,
+                (tg_id, sid8),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+
+def get_by_tg_id_sid8_for_update(
+    conn: Connection,
+    tg_id: int,
+    sid8: str,
+) -> dict[str, Any] | None:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT *
+            FROM sessions
+            WHERE tg_id = %s AND sid8 = %s
+            FOR UPDATE;
+            """,
+            (tg_id, sid8),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
 
 
 def create_new_active(
@@ -163,6 +199,18 @@ def update_step(session_id: int, step: int) -> None:
             )
 
 
+def update_step_in_tx(conn: Connection, session_id: int, step: int) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE sessions
+            SET step = %s, updated_at = now()
+            WHERE id = %s;
+            """,
+            (step, session_id),
+        )
+
+
 def update_params_json(session_id: int, params_json: dict[str, Any]) -> None:
     with transaction() as conn:
         with conn.cursor() as cur:
@@ -174,6 +222,20 @@ def update_params_json(session_id: int, params_json: dict[str, Any]) -> None:
                 """,
                 (to_json(params_json), session_id),
             )
+
+
+def update_params_json_in_tx(
+    conn: Connection, session_id: int, params_json: dict[str, Any]
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE sessions
+            SET params_json = %s, updated_at = now()
+            WHERE id = %s;
+            """,
+            (to_json(params_json), session_id),
+        )
 
 
 def update_facts_json(session_id: int, facts_json: dict[str, Any]) -> None:
@@ -207,3 +269,23 @@ def finish_with_final(
                 """,
                 (final_id, to_json({"final_meta": final_meta}), session_id),
             )
+
+
+def finish_with_final_in_tx(
+    conn: Connection,
+    session_id: int,
+    final_id: str,
+    final_meta: dict[str, Any],
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE sessions
+            SET status = 'FINISHED',
+                ending_id = %s,
+                facts_json = %s,
+                updated_at = now()
+            WHERE id = %s;
+            """,
+            (final_id, to_json({"final_meta": final_meta}), session_id),
+        )

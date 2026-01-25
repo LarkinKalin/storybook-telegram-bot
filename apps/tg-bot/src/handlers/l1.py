@@ -14,8 +14,16 @@ from src.keyboards.help import build_help_keyboard
 from src.keyboards.settings import build_settings_keyboard
 from src.keyboards.shop import build_shop_keyboard
 from src.keyboards.why import build_why_keyboard
-from src.services.runtime_sessions import abort_session, get_session, has_active, touch_last_step
-from src.services.story_runtime import advance_turn, render_step
+from src.services.l3_runtime import apply_l3_turn
+from src.services.runtime_sessions import (
+    abort_session,
+    get_session,
+    get_session_by_sid8,
+    has_active,
+    touch_last_step,
+)
+from src.services.story_runtime import render_step
+from src.services.ui_delivery import deliver_step_view
 from src.services.theme_registry import registry
 from src.states import L3, L4, L5, UX
 
@@ -391,13 +399,58 @@ async def on_inline_screen_text(message: Message, state: FSMContext) -> None:
     await message.answer("Сейчас жми кнопки. Если потерялся, нажми ⬅ В меню.")
 
 
+def _parse_l3_choice_callback(data: str) -> tuple[str, str, int] | None:
+    parts = data.split(":")
+    if len(parts) != 5:
+        return None
+    _, kind, choice_id, sid8, st2_raw = parts
+    if kind != "choice" or not choice_id or not sid8:
+        return None
+    try:
+        st2 = int(st2_raw)
+    except ValueError:
+        return None
+    return choice_id, sid8, st2
+
+
+def _parse_l3_free_text_callback(data: str) -> tuple[str, int] | None:
+    parts = data.split(":")
+    if len(parts) != 4:
+        return None
+    _, kind, sid8, st2_raw = parts
+    if kind != "free_text" or not sid8:
+        return None
+    try:
+        st2 = int(st2_raw)
+    except ValueError:
+        return None
+    return sid8, st2
+
+
+async def _recover_stale(
+    message: Message, state: FSMContext, tg_id: int, session: object
+) -> None:
+    now_ts = int(time())
+    last_sent_at = getattr(session, "last_step_sent_at", None)
+    if last_sent_at is None or now_ts - last_sent_at >= 5:
+        await do_continue(message, state, user_id=tg_id)
+        return
+    await open_l1(message, state, user_id=tg_id)
+
+
 @router.callback_query(lambda query: query.data and query.data.startswith("l3:choice:"))
 async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
         await callback.answer()
         return
+    payload = _parse_l3_choice_callback(callback.data)
+    if not payload:
+        logger.info("TG.6.4.01 invalid l3 choice payload")
+        await callback.answer()
+        return
+    choice_id, sid8, st2 = payload
     try:
-        session = get_session(callback.from_user.id)
+        session = get_session_by_sid8(callback.from_user.id, sid8)
     except Exception:
         await _handle_db_error(callback.message, state)
         await callback.answer()
@@ -406,57 +459,83 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Сессия устарела. Нажми /resume.")
         return
     if session.last_step_message_id and callback.message.message_id != session.last_step_message_id:
-        await callback.answer("Шаг устарел, нажми /resume.")
+        logger.info("TG.6.4.01 stale l3 choice (message_id)")
+        await callback.answer("Старое сообщение")
+        await _recover_stale(callback.message, state, callback.from_user.id, session)
         return
-    choice_id = callback.data.split(":", 2)[2]
+    if st2 != session.step:
+        logger.info("TG.6.4.01 stale l3 choice (step mismatch)")
+        await callback.answer("Старый шаг")
+        await _recover_stale(callback.message, state, callback.from_user.id, session)
+        return
     turn = {"kind": "choice", "choice_id": choice_id}
     try:
-        step_view = advance_turn(
-            session.__dict__, turn, source_message_id=callback.message.message_id
+        result = apply_l3_turn(
+            tg_id=callback.from_user.id,
+            sid8=sid8,
+            st2=st2,
+            turn=turn,
+            source_message_id=callback.message.message_id,
         )
     except Exception:
         await _handle_db_error(callback.message, state)
         await callback.answer()
         return
-    if step_view is None:
-        await callback.answer("Этот шаг уже обработан. Нажми /resume.")
+    if result is None:
+        await callback.answer("Сессия устарела. Нажми /resume.")
         return
-    sent_message = await callback.message.answer("...", reply_markup=ReplyKeyboardRemove())
-    step_message = sent_message
-    try:
-        await callback.message.bot.edit_message_text(
-            step_view.text,
-            chat_id=sent_message.chat.id,
-            message_id=sent_message.message_id,
-            reply_markup=step_view.keyboard,
-        )
-    except Exception:
-        try:
-            await callback.message.bot.delete_message(
-                chat_id=sent_message.chat.id,
-                message_id=sent_message.message_id,
-            )
-        except Exception:
-            pass
-        step_message = await callback.message.answer(
-            step_view.text, reply_markup=step_view.keyboard
-        )
-    try:
-        touch_last_step(callback.from_user.id, step_message.message_id, int(time()))
-    except Exception:
-        await _handle_db_error(callback.message, state)
-        await callback.answer()
+    if result.status == "stale":
+        logger.info("TG.6.4.01 stale l3 choice (tx)")
+        await callback.answer("Старый шаг")
+        await _recover_stale(callback.message, state, callback.from_user.id, session)
         return
+    if result.status == "duplicate":
+        logger.info("TG.6.4.01 duplicate l3 choice")
+    else:
+        logger.info("TG.6.4.01 accepted l3 choice")
+    await deliver_step_view(
+        message=callback.message,
+        step_view=result.step_view,
+        session_id=result.session_id,
+        step=result.step,
+        theme_id=result.theme_id,
+    )
     await state.set_state(L3.STEP)
     await callback.answer()
 
 
-@router.callback_query(lambda query: query.data == "l3:free_text")
+@router.callback_query(lambda query: query.data and query.data.startswith("l3:free_text"))
 async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
-    if not callback.message:
+    if not callback.message or not callback.from_user:
         await callback.answer()
         return
+    payload = _parse_l3_free_text_callback(callback.data)
+    if not payload:
+        logger.info("TG.6.4.01 invalid l3 free_text payload")
+        await callback.answer()
+        return
+    sid8, st2 = payload
+    try:
+        session = get_session_by_sid8(callback.from_user.id, sid8)
+    except Exception:
+        await _handle_db_error(callback.message, state)
+        await callback.answer()
+        return
+    if not session or not _is_session_valid(session):
+        await callback.answer("Сессия устарела. Нажми /resume.")
+        return
+    if session.last_step_message_id and callback.message.message_id != session.last_step_message_id:
+        logger.info("TG.6.4.01 stale l3 free_text (message_id)")
+        await callback.answer("Старое сообщение")
+        await _recover_stale(callback.message, state, callback.from_user.id, session)
+        return
+    if st2 != session.step:
+        logger.info("TG.6.4.01 stale l3 free_text (step mismatch)")
+        await callback.answer("Старый шаг")
+        await _recover_stale(callback.message, state, callback.from_user.id, session)
+        return
     await state.set_state(L3.FREE_TEXT)
+    await state.update_data(l3_sid8=sid8, l3_st2=st2)
     await callback.message.answer(
         "Напиши свой вариант текста. Я запомню его как ход.",
         reply_markup=ReplyKeyboardRemove(),
@@ -468,50 +547,57 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
 async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
     if not message.text:
         return
+    state_data = await state.get_data()
+    sid8 = state_data.get("l3_sid8")
+    st2 = state_data.get("l3_st2")
+    if not sid8 or st2 is None:
+        logger.info("TG.6.4.01 invalid l3 free_text state")
+        await message.answer("Сессия устарела. Нажми /resume.")
+        return
     try:
-        session = get_session(message.from_user.id)
+        session = get_session_by_sid8(message.from_user.id, sid8)
     except Exception:
         await _handle_db_error(message, state)
         return
     if not session or not _is_session_valid(session):
         await message.answer("Сессия устарела. Нажми /resume.")
         return
+    if int(st2) != session.step:
+        logger.info("TG.6.4.01 stale l3 free_text (step mismatch)")
+        await message.answer("Старый шаг")
+        await _recover_stale(message, state, message.from_user.id, session)
+        return
     turn = {"kind": "free_text", "text": message.text}
     try:
-        step_view = advance_turn(
-            session.__dict__, turn, source_message_id=message.message_id
+        result = apply_l3_turn(
+            tg_id=message.from_user.id,
+            sid8=sid8,
+            st2=int(st2),
+            turn=turn,
+            source_message_id=message.message_id,
         )
     except Exception:
         await _handle_db_error(message, state)
         return
-    if step_view is None:
-        await message.answer("Этот шаг уже обработан. Нажми /resume.")
+    if result is None:
+        await message.answer("Сессия устарела. Нажми /resume.")
         return
-    sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
-    step_message = sent_message
-    try:
-        await message.bot.edit_message_text(
-            step_view.text,
-            chat_id=sent_message.chat.id,
-            message_id=sent_message.message_id,
-            reply_markup=step_view.keyboard,
-        )
-    except Exception:
-        try:
-            await message.bot.delete_message(
-                chat_id=sent_message.chat.id,
-                message_id=sent_message.message_id,
-            )
-        except Exception:
-            pass
-        step_message = await message.answer(
-            step_view.text, reply_markup=step_view.keyboard
-        )
-    try:
-        touch_last_step(message.from_user.id, step_message.message_id, int(time()))
-    except Exception:
-        await _handle_db_error(message, state)
+    if result.status == "stale":
+        logger.info("TG.6.4.01 stale l3 free_text (tx)")
+        await message.answer("Старый шаг")
+        await _recover_stale(message, state, message.from_user.id, session)
         return
+    if result.status == "duplicate":
+        logger.info("TG.6.4.01 duplicate l3 free_text")
+    else:
+        logger.info("TG.6.4.01 accepted l3 free_text")
+    await deliver_step_view(
+        message=message,
+        step_view=result.step_view,
+        session_id=result.session_id,
+        step=result.step,
+        theme_id=result.theme_id,
+    )
     await state.set_state(L3.STEP)
 
 

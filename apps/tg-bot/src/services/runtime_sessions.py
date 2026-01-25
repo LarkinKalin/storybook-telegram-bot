@@ -13,6 +13,7 @@ SessionStatus = Literal["ACTIVE", "FINISHED", "ABORTED"]
 class Session:
     id: int
     tg_id: int
+    sid8: str
     status: SessionStatus
     theme_id: str | None
     step: int
@@ -38,6 +39,7 @@ def _row_to_session(row: dict | None) -> Session | None:
     return Session(
         id=int(row["id"]),
         tg_id=int(row["tg_id"]),
+        sid8=str(row["sid8"]),
         status=row["status"],
         theme_id=row["theme_id"],
         step=int(row.get("step", 0)),
@@ -58,6 +60,11 @@ def _get_user_id(tg_id: int) -> int:
 def get_session(tg_id: int) -> Session | None:
     user_id = _get_user_id(tg_id)
     row = sessions.get_active(user_id)
+    return _row_to_session(row)
+
+
+def get_session_by_sid8(tg_id: int, sid8: str) -> Session | None:
+    row = sessions.get_by_tg_id_sid8(tg_id, sid8)
     return _row_to_session(row)
 
 

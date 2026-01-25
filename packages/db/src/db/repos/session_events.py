@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from psycopg import Connection
 from psycopg.rows import dict_row
 
 from db.conn import to_json, transaction
@@ -42,6 +43,80 @@ def append_event(
             )
             row = cur.fetchone()
             return "inserted" if row else "duplicate"
+
+
+def insert_event(
+    conn: Connection,
+    session_id: int,
+    step: int,
+    user_input: str | None,
+    choice_id: str | None,
+    llm_json: dict[str, Any] | None,
+    deltas_json: dict[str, Any] | None,
+) -> int | None:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            INSERT INTO session_events (
+                session_id,
+                step,
+                user_input,
+                choice_id,
+                llm_json,
+                deltas_json
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (session_id, step) DO NOTHING
+            RETURNING id;
+            """,
+            (
+                session_id,
+                step,
+                user_input,
+                choice_id,
+                to_json(llm_json),
+                to_json(deltas_json),
+            ),
+        )
+        row = cur.fetchone()
+        return int(row["id"]) if row else None
+
+
+def update_event_payload(
+    conn: Connection,
+    event_id: int,
+    llm_json: dict[str, Any] | None,
+    deltas_json: dict[str, Any] | None,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE session_events
+            SET llm_json = %s,
+                deltas_json = %s
+            WHERE id = %s;
+            """,
+            (to_json(llm_json), to_json(deltas_json), event_id),
+        )
+
+
+def get_by_step(
+    conn: Connection,
+    session_id: int,
+    step: int,
+) -> dict[str, Any] | None:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT *
+            FROM session_events
+            WHERE session_id = %s AND step = %s
+            LIMIT 1;
+            """,
+            (session_id, step),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
 
 
 def exists_for_step(session_id: int, step: int) -> bool:

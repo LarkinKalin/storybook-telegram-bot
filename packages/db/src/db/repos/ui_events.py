@@ -32,6 +32,8 @@ def insert_idempotent(
                 ON CONFLICT (session_id, step, kind)
                 DO UPDATE SET content_hash = EXCLUDED.content_hash,
                               state = 'PENDING',
+                              fail_count = 0,
+                              next_retry_at = NULL,
                               pending_since = now(),
                               updated_at = now()
                 RETURNING id;

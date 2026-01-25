@@ -534,21 +534,6 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
         logger.info("TG.6.4.02 future l3 free_text (step ahead)")
         await callback.answer("Этот шаг ещё не активен.")
         return
-    if not session or not _is_session_valid(session):
-        await callback.answer("Сессия устарела. Нажми /resume.")
-        return
-    if session.last_step_message_id and callback.message.message_id != session.last_step_message_id:
-        logger.info("TG.6.4.02 stale l3 free_text (message_id)")
-        await callback.answer("Кнопка устарела. Продолжай в последнем сообщении.")
-        return
-    if st2 < session.step:
-        logger.info("TG.6.4.02 stale l3 free_text (step behind)")
-        await callback.answer("Кнопка устарела. Продолжай в последнем сообщении.")
-        return
-    if st2 > session.step:
-        logger.info("TG.6.4.02 future l3 free_text (step ahead)")
-        await callback.answer("Этот шаг ещё не активен.")
-        return
     await state.set_state(L3.FREE_TEXT)
     await state.update_data(l3_sid8=sid8, l3_st2=st2)
     await callback.message.answer(

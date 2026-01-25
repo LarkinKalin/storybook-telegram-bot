@@ -29,3 +29,6 @@ The tg-bot service does not bind-mount source code; after code changes run:
 docker compose -f infra/docker/docker-compose.yml build tg-bot
 docker compose -f infra/docker/docker-compose.yml up -d
 ```
+
+## Документация (Source of Truth)
+Главный вход: `docs/canon/INDEX.md` (порядок чтения, приоритеты, канон).

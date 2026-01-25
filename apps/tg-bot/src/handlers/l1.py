@@ -394,6 +394,7 @@ async def on_inline_screen_text(message: Message, state: FSMContext) -> None:
     if not message.text:
         return
     if await state.get_state() == L3.STEP:
+        logger.info("TG.6.4.02 outcome=text_ignored_not_awaiting")
         await message.answer("Сейчас жми кнопки. Если потерялся, нажми ⬅ В меню.")
         return
     await message.answer("Сейчас жми кнопки. Если потерялся, нажми ⬅ В меню.")
@@ -427,11 +428,17 @@ def _parse_l3_free_text_callback(data: str) -> tuple[str, int] | None:
     return sid8, st2
 
 
+async def _clear_l3_free_text_state(state: FSMContext) -> None:
+    await state.update_data(l3_sid8=None, l3_st2=None)
+
+
 @router.callback_query(lambda query: query.data and query.data.startswith("l3:choice:"))
 async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
         await callback.answer()
         return
+    if await state.get_state() == L3.FREE_TEXT:
+        await _clear_l3_free_text_state(state)
     payload = _parse_l3_choice_callback(callback.data)
     if not payload:
         logger.info("TG.6.4.02 invalid l3 choice payload")
@@ -491,6 +498,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         theme_id=result.theme_id,
     )
     await state.set_state(L3.STEP)
+    await _clear_l3_free_text_state(state)
     await callback.answer()
 
 
@@ -526,6 +534,21 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
         logger.info("TG.6.4.02 future l3 free_text (step ahead)")
         await callback.answer("Этот шаг ещё не активен.")
         return
+    if not session or not _is_session_valid(session):
+        await callback.answer("Сессия устарела. Нажми /resume.")
+        return
+    if session.last_step_message_id and callback.message.message_id != session.last_step_message_id:
+        logger.info("TG.6.4.02 stale l3 free_text (message_id)")
+        await callback.answer("Кнопка устарела. Продолжай в последнем сообщении.")
+        return
+    if st2 < session.step:
+        logger.info("TG.6.4.02 stale l3 free_text (step behind)")
+        await callback.answer("Кнопка устарела. Продолжай в последнем сообщении.")
+        return
+    if st2 > session.step:
+        logger.info("TG.6.4.02 future l3 free_text (step ahead)")
+        await callback.answer("Этот шаг ещё не активен.")
+        return
     await state.set_state(L3.FREE_TEXT)
     await state.update_data(l3_sid8=sid8, l3_st2=st2)
     await callback.message.answer(
@@ -543,7 +566,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
     sid8 = state_data.get("l3_sid8")
     st2 = state_data.get("l3_st2")
     if not sid8 or st2 is None:
-        logger.info("TG.6.4.02 invalid l3 free_text state")
+        logger.info("TG.6.4.02 outcome=text_ignored_not_awaiting")
         await message.answer("Кнопка устарела. Продолжай в последнем сообщении.")
         return
     try:
@@ -556,11 +579,13 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         return
     if int(st2) != session.step:
         if int(st2) < session.step:
-            logger.info("TG.6.4.02 stale l3 free_text (step behind)")
+            logger.info("TG.6.4.02 outcome=text_stale_step_mismatch")
             await message.answer("Кнопка устарела. Продолжай в последнем сообщении.")
+            await _clear_l3_free_text_state(state)
             return
-        logger.info("TG.6.4.02 future l3 free_text (step ahead)")
+        logger.info("TG.6.4.02 outcome=text_stale_step_mismatch")
         await message.answer("Этот шаг ещё не активен.")
+        await _clear_l3_free_text_state(state)
         return
     turn = {"kind": "free_text", "text": message.text}
     try:
@@ -580,11 +605,13 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
     if result.status == "stale":
         logger.info("TG.6.4.02 stale l3 free_text (tx)")
         await message.answer("Кнопка устарела. Продолжай в последнем сообщении.")
+        await _clear_l3_free_text_state(state)
         return
     if result.status == "duplicate":
         logger.info("TG.6.4.02 duplicate l3 free_text")
     else:
         logger.info("TG.6.4.02 accepted l3 free_text")
+        logger.info("TG.6.4.02 outcome=accepted_free_text")
     await deliver_step_view(
         message=message,
         step_view=result.step_view,
@@ -593,6 +620,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         theme_id=result.theme_id,
     )
     await state.set_state(L3.STEP)
+    await _clear_l3_free_text_state(state)
 
 
 @router.callback_query(lambda query: query.data == "go:shop")

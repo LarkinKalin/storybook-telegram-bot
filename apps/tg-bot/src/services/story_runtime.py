@@ -5,7 +5,7 @@ from typing import Dict, Optional
 
 from db.repos import sessions
 from packages.engine.src.engine_v0_1 import init_state_v01
-from src.keyboards.l3 import build_l3_keyboard
+from src.keyboards.l3 import build_final_keyboard, build_l3_keyboard
 from src.services.content_stub import build_content_step
 
 
@@ -27,14 +27,9 @@ def ensure_engine_state(session_row: Dict) -> Dict:
 
 def render_step(session_row: Dict, state: Dict | None = None) -> StepView:
     state = state or ensure_engine_state(session_row)
-    if state["step0"] >= state["n"]:
+    if state["step0"] >= state["n"] - 1:
         final_text = "Сказка завершена. Можно начать новую."
-        keyboard = build_l3_keyboard(
-            [],
-            allow_free_text=False,
-            sid8=session_row["sid8"],
-            step=state["step0"],
-        )
+        keyboard = build_final_keyboard()
         return StepView(text=final_text, keyboard=keyboard)
     content = build_content_step(session_row["theme_id"], state["step0"], state)
     choices = content["choices"]

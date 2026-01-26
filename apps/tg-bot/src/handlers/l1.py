@@ -25,7 +25,13 @@ from src.services.runtime_sessions import (
     touch_last_step,
 )
 from src.services.story_runtime import ensure_engine_state, render_step
-from src.services.ui_delivery import deliver_step_lock, deliver_step_view
+from src.services.ui_delivery import (
+    acquire_step_event,
+    content_hash,
+    deliver_step_lock,
+    deliver_step_view,
+)
+from db.repos import ui_events
 from src.services.content_stub import build_content_step
 from db.repos import session_events
 from src.services.theme_registry import registry
@@ -251,7 +257,21 @@ async def _continue_current(
         and getattr(session, "last_step_sent_at", None)
         and now_ts - session.last_step_sent_at <= 5
     ):
-        logger.info("TG.6.4.06 outcome=resume_duplicate")
+        logger.info("TG.6.4.09 outcome=resume_duplicate")
+        return
+    kind = "resume_shown" if mode == "resume" else "continue_shown"
+    dedup_hash = content_hash(theme_id=None, text=f"{kind}:{session.step}")
+    acquire = acquire_step_event(
+        session_id=session.id,
+        step=session.step,
+        kind=kind,
+        content_hash_value=dedup_hash,
+    )
+    if acquire.decision != "show" or acquire.event_id is None:
+        if mode == "resume":
+            logger.info("TG.6.4.09 outcome=resume_duplicate")
+        else:
+            logger.info("TG.6.4.09 outcome=continue_duplicate")
         return
     step_view = render_step(session.__dict__)
     step_text = step_view.text
@@ -278,7 +298,14 @@ async def _continue_current(
     except Exception:
         await _handle_db_error(message, state)
         return
-    logger.info("TG.6.4.06 outcome=resume_shown")
+    try:
+        ui_events.mark_shown(acquire.event_id, step_message_id=step_message.message_id)
+    except Exception:
+        pass
+    if mode == "resume":
+        logger.info("TG.6.4.09 outcome=resume_shown")
+    else:
+        logger.info("TG.6.4.09 outcome=continue_shown")
     await state.set_state(L3.STEP)
 
 
@@ -614,6 +641,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(lambda query: query.data and query.data.startswith("locked:"))
 async def on_locked_step(callback: CallbackQuery) -> None:
+    logger.info("TG.6.4.09 outcome=locked")
     await callback.answer("Этот шаг уже сыгран")
 
 

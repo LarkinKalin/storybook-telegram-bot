@@ -155,6 +155,20 @@ def finish(session_id: int, status: str = "FINISHED") -> None:
             )
 
 
+def finish_in_tx(conn: Connection, session_id: int, status: str = "FINISHED") -> None:
+    if status not in _ALLOWED_FINISH_STATUSES:
+        raise ValueError("status must be FINISHED or ABORTED")
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE sessions
+            SET status = %s, updated_at = now()
+            WHERE id = %s;
+            """,
+            (status, session_id),
+        )
+
+
 def update_last_step(
     session_id: int,
     message_id: int | None,

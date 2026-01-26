@@ -155,7 +155,16 @@ def apply_l3_turn(
                 final_id=step_log["final_id"],
             )
 
-        step_view = render_step({**session_row, "params_json": new_state}, state=new_state)
+        if new_state["step0"] >= new_state["n"] - 1:
+            sessions.finish_in_tx(conn, session_row["id"], status="FINISHED")
+            final_text = "Сказка завершена. Можно начать новую."
+            step_view = StepView(
+                text=final_text,
+                keyboard=build_final_keyboard(),
+                final_id=None,
+            )
+        else:
+            step_view = render_step({**session_row, "params_json": new_state}, state=new_state)
         return L3TurnResult(
             status="accepted",
             step_view=step_view,

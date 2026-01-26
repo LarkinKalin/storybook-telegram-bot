@@ -53,8 +53,5 @@ def build_locked_keyboard(
 
 
 def build_final_keyboard() -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(text="🏠 В меню", callback_data="go:l1")],
-        [InlineKeyboardButton(text="▶ Начать новую", callback_data="go:start")],
-    ]
+    rows = [[InlineKeyboardButton(text="🏠 В меню", callback_data="go:l1")]]
     return InlineKeyboardMarkup(inline_keyboard=rows)

@@ -13,6 +13,6 @@ COPY packages/engine/ /app/packages/engine/
 COPY packages/llm/ /app/packages/llm/
 
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app:/app/src:/app/packages
+ENV PYTHONPATH=/app:/app/src:/app/packages/db/src:/app/packages/engine/src:/app/packages/llm/src
 
 CMD ["python", "-m", "src.bot_app"]

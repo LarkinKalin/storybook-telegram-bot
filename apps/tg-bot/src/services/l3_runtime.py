@@ -122,6 +122,10 @@ def apply_l3_turn(
             final_meta=final_meta,
         )
 
+    base_meta_json = {
+        "req_id": req_id,
+        "source_message_id": source_message_id,
+    }
     result = l3_turns.apply_l3_turn_atomic(
         tg_id=tg_id,
         sid8=sid8,
@@ -129,6 +133,7 @@ def apply_l3_turn(
         step=st2,
         user_input=turn.get("text"),
         choice_id=turn.get("choice_id"),
+        base_meta_json=base_meta_json,
         apply_fn=_apply_in_tx,
     )
     if not result:

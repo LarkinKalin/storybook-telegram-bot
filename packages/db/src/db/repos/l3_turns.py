@@ -38,6 +38,7 @@ def apply_l3_turn_atomic(
     step: int,
     user_input: str | None,
     choice_id: str | None,
+    base_meta_json: dict[str, Any] | None = None,
     is_valid: Callable[[dict[str, Any]], bool] | None = None,
     apply_fn: Callable[[dict[str, Any]], L3ApplyPayload],
 ) -> L3ApplyResult | None:
@@ -74,7 +75,7 @@ def apply_l3_turn_atomic(
             deltas_json=None,
             outcome="accepted",
             step_result_json=None,
-            meta_json=None,
+            meta_json=base_meta_json,
         )
         if event_id is None:
             existing_event = session_events.get_by_step(
@@ -82,6 +83,22 @@ def apply_l3_turn_atomic(
                 session_id=session_row["id"],
                 step=step,
             )
+            if existing_event:
+                meta_json = existing_event.get("meta_json") or {}
+                if not isinstance(meta_json, dict):
+                    meta_json = {}
+                if base_meta_json:
+                    meta_json = {**meta_json, **base_meta_json}
+                meta_json["last_outcome"] = "duplicate"
+                session_events.update_event_payload(
+                    conn,
+                    event_id=existing_event["id"],
+                    llm_json=existing_event.get("llm_json"),
+                    deltas_json=existing_event.get("deltas_json"),
+                    outcome="duplicate",
+                    step_result_json=existing_event.get("step_result_json"),
+                    meta_json=meta_json,
+                )
             return L3ApplyResult(
                 outcome="duplicate",
                 session_row=session_row,
@@ -91,6 +108,9 @@ def apply_l3_turn_atomic(
             )
 
         payload = apply_fn(session_row)
+        merged_meta_json = base_meta_json or {}
+        if payload.meta_json:
+            merged_meta_json = {**merged_meta_json, **payload.meta_json}
         session_events.update_event_payload(
             conn,
             event_id=event_id,
@@ -98,7 +118,7 @@ def apply_l3_turn_atomic(
             deltas_json=payload.deltas_json,
             outcome="accepted",
             step_result_json=payload.step_result_json,
-            meta_json=payload.meta_json,
+            meta_json=merged_meta_json,
         )
         sessions.update_params_json_in_tx(conn, session_row["id"], payload.new_state)
         sessions.update_step_in_tx(conn, session_row["id"], payload.new_state["step0"])

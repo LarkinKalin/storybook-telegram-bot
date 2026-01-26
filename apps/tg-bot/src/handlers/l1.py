@@ -212,7 +212,6 @@ async def _handle_db_error(
     step0: int | None = None,
     req_id: str | None = None,
 ) -> None:
-    logger.exception("DB operation failed")
     if session_id is not None or step is not None:
         _log_l3_step(
             "invalid",
@@ -222,6 +221,7 @@ async def _handle_db_error(
             step0=step0,
             req_id=req_id,
         )
+    logger.warning("DB operation failed: db_unavailable")
     await message.answer("⚠️ База данных временно недоступна. Попробуй позже.")
     await state.set_state(UX.l1)
     await message.answer("🏠 Главное меню", reply_markup=build_l1_keyboard(False))

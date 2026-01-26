@@ -340,7 +340,7 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
     await _continue_current(message, state, session, mode="menu")
 
 
-@router.message(Command("resume"))
+@router.message(Command("resume"), StateFilter("*"))
 async def on_resume(message: Message, state: FSMContext) -> None:
     if not _is_private(message):
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
@@ -356,7 +356,7 @@ async def on_resume(message: Message, state: FSMContext) -> None:
     await _continue_current(message, state, session, mode="resume")
 
 
-@router.message(Command("status"))
+@router.message(Command("status"), StateFilter("*"))
 async def on_status(message: Message, state: FSMContext) -> None:
     if not _is_private(message):
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
@@ -392,30 +392,32 @@ async def on_status(message: Message, state: FSMContext) -> None:
     await message.answer("\n".join(lines))
 
 
-@router.message(Command("help"))
+@router.message(Command("help"), StateFilter("*"))
 async def on_help(message: Message, state: FSMContext) -> None:
     if not _is_private(message):
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
         return
+    logger.info("TG.6.4.10 cmd=/help outcome=help_shown")
     await state.set_state(L4.HELP)
     await _send_help_screen(message)
 
 
-@router.message(Command("settings"))
+@router.message(Command("settings"), StateFilter("*"))
 async def on_settings(message: Message, state: FSMContext) -> None:
     if not _is_private(message):
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
         return
+    logger.info("TG.6.4.10 cmd=/settings outcome=settings_shown")
     await state.set_state(L4.SETTINGS)
     await _send_settings_screen(message)
 
 
-@router.message(Command("menu"))
+@router.message(Command("menu"), StateFilter("*"))
 async def on_menu(message: Message, state: FSMContext) -> None:
     await open_l1(message, state)
 
 
-@router.message(Command("shop"))
+@router.message(Command("shop"), StateFilter("*"))
 async def on_shop(message: Message, state: FSMContext) -> None:
     if not _is_private(message):
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
@@ -462,6 +464,10 @@ async def on_go_help(callback: CallbackQuery, state: FSMContext) -> None:
 @router.message(L4.SETTINGS)
 async def on_inline_screen_text(message: Message, state: FSMContext) -> None:
     if not message.text:
+        return
+    if message.text.strip().startswith("/"):
+        logger.info("TG.6.4.10 cmd=%s outcome=unknown_command_menu", message.text.strip())
+        await open_l1(message, state, user_id=message.from_user.id)
         return
     if await state.get_state() == L3.STEP:
         logger.info("TG.6.4.02 outcome=text_ignored_not_awaiting")
@@ -799,9 +805,10 @@ async def on_go_continue(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-@router.message(Command("start"))
+@router.message(Command("start"), StateFilter("*"))
 async def on_start(message: Message, state: FSMContext) -> None:
     # /start = вход в "дом" бота (L1), не "начать сказку"
+    logger.info("TG.6.4.10 cmd=/start outcome=menu_shown active=%s state=%s", 1 if has_active(message.from_user.id) else 0, await state.get_state())
     await open_l1(message, state)
 
 

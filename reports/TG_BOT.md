@@ -21,6 +21,18 @@
 Результат: OK
 2026-01-19 | TG.2.2.01+TG.2.3.01 | DONE | Runnable tg-bot (aiogram) in docker compose, /start отвечает; commits 7cdcc83,b03044e,b0f1ca1
 
+Проверка LLM слоя (smoke):
+- Одна команда: `bash /srv/git/skazka/apps/tg-bot/scripts/smoke_llm.sh`
+- Скрипт сам перезапускает tg-bot в режимах:
+  - `LLM_PROVIDER=off`
+  - `LLM_PROVIDER=mock` + `LLM_MOCK_MODE=ok`
+  - `LLM_PROVIDER=mock` + `LLM_MOCK_MODE=invalid_json`
+- После каждого режима пишет подсказку “нажми A/B/C в Telegram”.
+- В логах ожидаются строки:
+  - `llm.adapter provider=off skipped=true`
+  - `llm.adapter provider=mock ...`
+  - `llm.fallback expected=story_step reason=invalid_json`
+
 
 2026-01-19 | TG.2.1.02 | DONE | L1 ReplyKeyboard: fixed labels, text==button treated as command; unknown text -> hint + L1
 2026-01-19 | TG.2.1.02A | DONE | L1: slash aliases for all L1 buttons + prefix suggestions for partial slash input; BotFather commands configured (latin) for client-side autocomplete

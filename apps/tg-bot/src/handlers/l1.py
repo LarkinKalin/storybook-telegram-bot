@@ -24,7 +24,7 @@ from src.services.runtime_sessions import (
     is_step_current,
     touch_last_step,
 )
-from src.services.story_runtime import ensure_engine_state, render_step
+from src.services.story_runtime import ensure_engine_state, render_current_step
 from src.services.ui_delivery import (
     acquire_step_event,
     content_hash,
@@ -243,6 +243,40 @@ async def _screen_label(state: FSMContext) -> str:
     return "unknown"
 
 
+def _log_l3_step(
+    outcome: str,
+    reason: str,
+    *,
+    session_id: int | None,
+    step: int | None,
+) -> None:
+    session_value = session_id if session_id is not None else "unknown"
+    step_value = step if step is not None else "unknown"
+    logger.info(
+        "event=l3_step outcome=%s reason=%s session_id=%s step=%s",
+        outcome,
+        reason,
+        session_value,
+        step_value,
+    )
+
+
+async def _deliver_current_step(
+    message: Message,
+    state: FSMContext,
+    session: object,
+) -> None:
+    step_view = render_current_step(session.__dict__)
+    await deliver_step_view(
+        message=message,
+        step_view=step_view,
+        session_id=session.id,
+        step=session.step,
+        theme_id=session.theme_id,
+    )
+    await state.set_state(L3.STEP)
+
+
 async def _continue_current(
     message: Message,
     state: FSMContext,
@@ -280,7 +314,7 @@ async def _continue_current(
             session.step,
         )
         return
-    step_view = render_step(session.__dict__)
+    step_view = render_current_step(session.__dict__)
     step_text = step_view.text
     sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
     step_message = sent_message
@@ -484,7 +518,12 @@ async def on_inline_screen_text(message: Message, state: FSMContext) -> None:
         await open_l1(message, state, user_id=message.from_user.id)
         return
     if await state.get_state() == L3.STEP:
-        logger.info("TG.6.4.02 outcome=text_ignored_not_awaiting")
+        _log_l3_step(
+            "invalid",
+            "text_not_expected",
+            session_id=None,
+            step=None,
+        )
         await message.answer("Сейчас жми кнопки. Если потерялся, нажми ⬅ В меню.")
         return
     await message.answer("Сейчас жми кнопки. Если потерялся, нажми ⬅ В меню.")
@@ -516,6 +555,19 @@ def _parse_l3_free_text_callback(data: str) -> tuple[str, int] | None:
     except ValueError:
         return None
     return sid8, st2
+
+
+def _parse_locked_callback(data: str) -> tuple[str, int] | None:
+    parts = data.split(":")
+    if len(parts) < 3:
+        return None
+    if parts[0] != "locked":
+        return None
+    try:
+        step = int(parts[2])
+    except ValueError:
+        return None
+    return parts[1], step
 
 
 async def _clear_l3_free_text_state(state: FSMContext) -> None:
@@ -571,7 +623,12 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         await _clear_l3_free_text_state(state)
     payload = _parse_l3_choice_callback(callback.data)
     if not payload:
-        logger.info("TG.6.4.02 invalid l3 choice payload")
+        _log_l3_step(
+            "invalid",
+            "invalid_payload",
+            session_id=None,
+            step=None,
+        )
         await callback.answer("Кнопка недействительна или устарела.")
         return
     choice_id, sid8, st2 = payload
@@ -582,19 +639,43 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer()
         return
     if not session or not _is_session_valid(session):
+        _log_l3_step(
+            "stale",
+            "session_missing",
+            session_id=getattr(session, "id", None),
+            step=getattr(session, "step", None),
+        )
         await callback.answer("Сессия устарела. Нажми /resume.")
         return
     if session.last_step_message_id and callback.message.message_id != session.last_step_message_id:
-        logger.info("TG.6.4.02 stale l3 choice (message_id)")
+        _log_l3_step(
+            "stale",
+            "message_id_mismatch",
+            session_id=session.id,
+            step=session.step,
+        )
         await callback.answer("Ход уже принят. Сообщение устарело.")
+        await _deliver_current_step(callback.message, state, session)
         return
     if st2 < session.step:
-        logger.info("TG.6.4.02 stale l3 choice (step behind)")
+        _log_l3_step(
+            "stale",
+            "step_behind",
+            session_id=session.id,
+            step=session.step,
+        )
         await callback.answer("Ход уже принят. Сообщение устарело.")
+        await _deliver_current_step(callback.message, state, session)
         return
     if st2 > session.step:
-        logger.info("TG.6.4.02 future l3 choice (step ahead)")
+        _log_l3_step(
+            "stale",
+            "step_ahead",
+            session_id=session.id,
+            step=session.step,
+        )
         await callback.answer("Ход уже принят. Сообщение устарело.")
+        await _deliver_current_step(callback.message, state, session)
         return
     state_snapshot = ensure_engine_state(session.__dict__)
     content_snapshot = build_content_step(session.theme_id, state_snapshot["step0"], state_snapshot)
@@ -617,16 +698,47 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer()
         return
     if result is None:
+        _log_l3_step(
+            "stale",
+            "session_missing",
+            session_id=None,
+            step=st2,
+        )
         await callback.answer("Сессия устарела. Нажми /resume.")
         return
+    if result.status == "invalid":
+        _log_l3_step(
+            "invalid",
+            "invalid_turn",
+            session_id=result.session_id or None,
+            step=st2,
+        )
+        await callback.answer("Ход отклонён. Попробуй ещё раз.")
+        return
     if result.status == "stale":
-        logger.info("TG.6.4.02 stale l3 choice (tx)")
+        _log_l3_step(
+            "stale",
+            "tx_stale",
+            session_id=result.session_id,
+            step=result.step,
+        )
         await callback.answer("Ход уже принят. Сообщение устарело.")
+        await _deliver_current_step(callback.message, state, session)
         return
     if result.status == "duplicate":
-        logger.info("TG.6.4.07 outcome=duplicate step0=%s", st2)
+        _log_l3_step(
+            "duplicate",
+            "duplicate_insert",
+            session_id=result.session_id,
+            step=st2,
+        )
     else:
-        logger.info("TG.6.4.07 outcome=accepted step0=%s", st2)
+        _log_l3_step(
+            "accepted",
+            "applied",
+            session_id=result.session_id,
+            step=st2,
+        )
     locked_rows = _locked_rows_from_markup(callback.message.reply_markup)
     if not locked_rows:
         locked_rows = _locked_rows_from_content(session, st2)
@@ -643,6 +755,14 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
     )
     logger.info("TG.6.4.07 keyboard=cleared msg_id=%s", callback.message.message_id)
     if result.status == "duplicate":
+        await deliver_step_view(
+            message=callback.message,
+            step_view=result.step_view,
+            session_id=result.session_id,
+            step=result.step,
+            theme_id=result.theme_id,
+        )
+        await state.set_state(L3.STEP)
         await callback.answer("Ход уже принят. Сообщение устарело.")
         return
     if choice_label:
@@ -660,8 +780,31 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @router.callback_query(lambda query: query.data and query.data.startswith("locked:"))
-async def on_locked_step(callback: CallbackQuery) -> None:
-    logger.info("TG.6.4.09 outcome=locked")
+async def on_locked_step(callback: CallbackQuery, state: FSMContext) -> None:
+    session_id = None
+    step = None
+    payload = _parse_locked_callback(callback.data)
+    if payload and callback.from_user:
+        sid8, step = payload
+        try:
+            session = get_session_by_sid8(callback.from_user.id, sid8)
+            if session:
+                session_id = session.id
+        except Exception:
+            session_id = None
+    _log_l3_step(
+        "duplicate",
+        "locked_button",
+        session_id=session_id,
+        step=step,
+    )
+    if callback.message and payload and session_id and callback.from_user:
+        try:
+            session = get_session_by_sid8(callback.from_user.id, payload[0])
+        except Exception:
+            session = None
+        if session:
+            await _deliver_current_step(callback.message, state, session)
     await callback.answer("Этот шаг уже сыгран")
 
 
@@ -672,7 +815,12 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
         return
     payload = _parse_l3_free_text_callback(callback.data)
     if not payload:
-        logger.info("TG.6.4.02 invalid l3 free_text payload")
+        _log_l3_step(
+            "invalid",
+            "invalid_payload",
+            session_id=None,
+            step=None,
+        )
         await callback.answer("Кнопка недействительна или устарела.")
         return
     sid8, st2 = payload
@@ -683,27 +831,63 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer()
         return
     if not session or not _is_session_valid(session):
+        _log_l3_step(
+            "stale",
+            "session_missing",
+            session_id=getattr(session, "id", None),
+            step=getattr(session, "step", None),
+        )
         await callback.answer("Сессия устарела. Нажми /resume.")
         return
     if session.last_step_message_id and callback.message.message_id != session.last_step_message_id:
-        logger.info("TG.6.4.02 stale l3 free_text (message_id)")
+        _log_l3_step(
+            "stale",
+            "message_id_mismatch",
+            session_id=session.id,
+            step=session.step,
+        )
         await callback.answer("Ход уже принят. Сообщение устарело.")
+        await _deliver_current_step(callback.message, state, session)
         return
     if st2 < session.step:
-        logger.info("TG.6.4.02 stale l3 free_text (step behind)")
+        _log_l3_step(
+            "stale",
+            "step_behind",
+            session_id=session.id,
+            step=session.step,
+        )
         await callback.answer("Ход уже принят. Сообщение устарело.")
+        await _deliver_current_step(callback.message, state, session)
         return
     if st2 > session.step:
-        logger.info("TG.6.4.02 future l3 free_text (step ahead)")
+        _log_l3_step(
+            "stale",
+            "step_ahead",
+            session_id=session.id,
+            step=session.step,
+        )
         await callback.answer("Ход уже принят. Сообщение устарело.")
+        await _deliver_current_step(callback.message, state, session)
         return
     if not is_step_current(callback.from_user.id, sid8, st2):
-        logger.info("TG.6.4.02 stale l3 free_text (step check)")
+        _log_l3_step(
+            "stale",
+            "step_check_failed",
+            session_id=session.id,
+            step=session.step,
+        )
         await callback.answer("Ход уже принят. Сообщение устарело.")
+        await _deliver_current_step(callback.message, state, session)
         return
     if session_events.exists_for_step(session.id, st2):
-        logger.info("TG.6.4.09 outcome=locked step0=%s", st2)
+        _log_l3_step(
+            "duplicate",
+            "step_already_played",
+            session_id=session.id,
+            step=st2,
+        )
         await callback.answer("Этот шаг уже сыгран")
+        await _deliver_current_step(callback.message, state, session)
         return
     await state.set_state(L3.FREE_TEXT)
     await state.update_data(l3_sid8=sid8, l3_st2=st2)
@@ -722,7 +906,12 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
     sid8 = state_data.get("l3_sid8")
     st2 = state_data.get("l3_st2")
     if not sid8 or st2 is None:
-        logger.info("TG.6.4.02 outcome=text_ignored_not_awaiting")
+        _log_l3_step(
+            "invalid",
+            "text_not_expected",
+            session_id=None,
+            step=None,
+        )
         return
     try:
         session = get_session_by_sid8(message.from_user.id, sid8)
@@ -730,15 +919,33 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         await _handle_db_error(message, state)
         return
     if not session or not _is_session_valid(session):
+        _log_l3_step(
+            "stale",
+            "session_missing",
+            session_id=getattr(session, "id", None),
+            step=getattr(session, "step", None),
+        )
         await message.answer("Сессия устарела. Нажми /resume.")
         return
     if int(st2) != session.step:
         if int(st2) < session.step:
-            logger.info("TG.6.4.02 outcome=text_stale_step_mismatch")
+            _log_l3_step(
+                "stale",
+                "step_mismatch",
+                session_id=session.id,
+                step=session.step,
+            )
             await _clear_l3_free_text_state(state)
+            await _deliver_current_step(message, state, session)
             return
-        logger.info("TG.6.4.02 outcome=text_stale_step_mismatch")
+        _log_l3_step(
+            "stale",
+            "step_mismatch",
+            session_id=session.id,
+            step=session.step,
+        )
         await _clear_l3_free_text_state(state)
+        await _deliver_current_step(message, state, session)
         return
     turn = {"kind": "free_text", "text": message.text}
     try:
@@ -753,17 +960,48 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         await _handle_db_error(message, state)
         return
     if result is None:
+        _log_l3_step(
+            "stale",
+            "session_missing",
+            session_id=None,
+            step=st2,
+        )
         await message.answer("Сессия устарела. Нажми /resume.")
         return
-    if result.status == "stale":
-        logger.info("TG.6.4.02 stale l3 free_text (tx)")
+    if result.status == "invalid":
+        _log_l3_step(
+            "invalid",
+            "invalid_turn",
+            session_id=result.session_id or None,
+            step=int(st2),
+        )
+        await message.answer("Ход отклонён. Попробуй ещё раз.")
         await _clear_l3_free_text_state(state)
         return
+    if result.status == "stale":
+        _log_l3_step(
+            "stale",
+            "tx_stale",
+            session_id=result.session_id,
+            step=result.step,
+        )
+        await _clear_l3_free_text_state(state)
+        await _deliver_current_step(message, state, session)
+        return
     if result.status == "duplicate":
-        logger.info("TG.6.4.07 outcome=duplicate step0=%s", st2)
+        _log_l3_step(
+            "duplicate",
+            "duplicate_insert",
+            session_id=result.session_id,
+            step=int(st2),
+        )
     else:
-        logger.info("TG.6.4.07 outcome=accepted step0=%s", st2)
-        logger.info("TG.6.4.02 outcome=accepted_free_text")
+        _log_l3_step(
+            "accepted",
+            "applied",
+            session_id=result.session_id,
+            step=int(st2),
+        )
     if session.last_step_message_id:
         locked_rows = _locked_rows_from_content(session, int(st2))
         locked_keyboard = (
@@ -779,6 +1017,13 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         )
         logger.info("TG.6.4.07 keyboard=cleared msg_id=%s", session.last_step_message_id)
     if result.status == "duplicate":
+        await deliver_step_view(
+            message=message,
+            step_view=result.step_view,
+            session_id=result.session_id,
+            step=result.step,
+            theme_id=result.theme_id,
+        )
         await _clear_l3_free_text_state(state)
         return
     await message.answer(f"Твой выбор: {message.text}")

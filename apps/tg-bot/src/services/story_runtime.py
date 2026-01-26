@@ -16,6 +16,22 @@ class StepView:
     final_id: Optional[str] = None
 
 
+def build_final_step_result(final_id: str | None) -> Dict:
+    if final_id:
+        final_text = (
+            f"Финал {final_id}.\n"
+            "Спасибо за игру! Можно начать новую сказку."
+        )
+    else:
+        final_text = "Сказка завершена. Можно начать новую."
+    return {
+        "text": final_text,
+        "choices": [],
+        "allow_free_text": False,
+        "final_id": final_id,
+    }
+
+
 def ensure_engine_state(session_row: Dict) -> Dict:
     params = session_row.get("params_json") or {}
     if not isinstance(params, dict) or params.get("v") != "0.1":
@@ -25,12 +41,10 @@ def ensure_engine_state(session_row: Dict) -> Dict:
     return params
 
 
-def render_step(session_row: Dict, state: Dict | None = None) -> StepView:
+def build_step_result(session_row: Dict, state: Dict | None = None) -> Dict:
     state = state or ensure_engine_state(session_row)
     if state["step0"] >= state["n"] - 1:
-        final_text = "Сказка завершена. Можно начать новую."
-        keyboard = build_final_keyboard()
-        return StepView(text=final_text, keyboard=keyboard)
+        return build_final_step_result(final_id=None)
     content = build_content_step(session_row["theme_id"], state["step0"], state)
     choices = content["choices"]
     text_lines = [
@@ -43,10 +57,38 @@ def render_step(session_row: Dict, state: Dict | None = None) -> StepView:
     keyboard_choices = [
         {"choice_id": choice["choice_id"], "label": choice["label"]} for choice in choices
     ]
-    keyboard = build_l3_keyboard(
-        keyboard_choices,
-        allow_free_text=state["free_text_allowed_after"],
-        sid8=session_row["sid8"],
-        step=state["step0"],
-    )
-    return StepView(text="\n".join(text_lines), keyboard=keyboard)
+    return {
+        "text": "\n".join(text_lines),
+        "choices": keyboard_choices,
+        "allow_free_text": state["free_text_allowed_after"],
+        "final_id": None,
+    }
+
+
+def step_result_to_view(step_result: Dict, sid8: str, step: int) -> StepView:
+    text = step_result.get("text") or ""
+    final_id = step_result.get("final_id")
+    choices = step_result.get("choices") or []
+    allow_free_text = bool(step_result.get("allow_free_text"))
+    if final_id or not choices:
+        keyboard = build_final_keyboard()
+    else:
+        keyboard = build_l3_keyboard(
+            choices,
+            allow_free_text=allow_free_text,
+            sid8=sid8,
+            step=step,
+        )
+    return StepView(text=text, keyboard=keyboard, final_id=final_id)
+
+
+def render_current_step(session_row: Dict) -> StepView:
+    state = ensure_engine_state(session_row)
+    step_result = build_step_result(session_row, state=state)
+    return step_result_to_view(step_result, sid8=session_row["sid8"], step=state["step0"])
+
+
+def render_step(session_row: Dict, state: Dict | None = None) -> StepView:
+    state = state or ensure_engine_state(session_row)
+    step_result = build_step_result(session_row, state=state)
+    return step_result_to_view(step_result, sid8=session_row["sid8"], step=state["step0"])

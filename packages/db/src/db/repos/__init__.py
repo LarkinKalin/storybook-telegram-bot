@@ -1,5 +1,6 @@
 from db.repos import (
     confirm_requests,
+    l3_turns,
     payments,
     session_events,
     sessions,
@@ -10,6 +11,7 @@ from db.repos import (
 
 __all__ = [
     "confirm_requests",
+    "l3_turns",
     "payments",
     "session_events",
     "sessions",

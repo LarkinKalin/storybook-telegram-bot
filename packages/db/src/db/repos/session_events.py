@@ -15,6 +15,10 @@ def append_event(
     choice_id: str | None,
     llm_json: dict[str, Any] | None,
     deltas_json: dict[str, Any] | None,
+    *,
+    outcome: str | None = None,
+    step_result_json: dict[str, Any] | None = None,
+    meta_json: dict[str, Any] | None = None,
 ) -> str:
     with transaction() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -26,9 +30,12 @@ def append_event(
                     user_input,
                     choice_id,
                     llm_json,
-                    deltas_json
+                    deltas_json,
+                    outcome,
+                    step_result_json,
+                    meta_json
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (session_id, step) DO NOTHING
                 RETURNING id;
                 """,
@@ -39,6 +46,9 @@ def append_event(
                     choice_id,
                     to_json(llm_json),
                     to_json(deltas_json),
+                    outcome,
+                    to_json(step_result_json),
+                    to_json(meta_json),
                 ),
             )
             row = cur.fetchone()
@@ -53,6 +63,10 @@ def insert_event(
     choice_id: str | None,
     llm_json: dict[str, Any] | None,
     deltas_json: dict[str, Any] | None,
+    *,
+    outcome: str | None = None,
+    step_result_json: dict[str, Any] | None = None,
+    meta_json: dict[str, Any] | None = None,
 ) -> int | None:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
@@ -63,9 +77,12 @@ def insert_event(
                 user_input,
                 choice_id,
                 llm_json,
-                deltas_json
+                deltas_json,
+                outcome,
+                step_result_json,
+                meta_json
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (session_id, step) DO NOTHING
             RETURNING id;
             """,
@@ -76,6 +93,9 @@ def insert_event(
                 choice_id,
                 to_json(llm_json),
                 to_json(deltas_json),
+                outcome,
+                to_json(step_result_json),
+                to_json(meta_json),
             ),
         )
         row = cur.fetchone()
@@ -87,16 +107,30 @@ def update_event_payload(
     event_id: int,
     llm_json: dict[str, Any] | None,
     deltas_json: dict[str, Any] | None,
+    *,
+    outcome: str | None = None,
+    step_result_json: dict[str, Any] | None = None,
+    meta_json: dict[str, Any] | None = None,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE session_events
             SET llm_json = %s,
-                deltas_json = %s
+                deltas_json = %s,
+                outcome = %s,
+                step_result_json = %s,
+                meta_json = %s
             WHERE id = %s;
             """,
-            (to_json(llm_json), to_json(deltas_json), event_id),
+            (
+                to_json(llm_json),
+                to_json(deltas_json),
+                outcome,
+                to_json(step_result_json),
+                to_json(meta_json),
+                event_id,
+            ),
         )
 
 

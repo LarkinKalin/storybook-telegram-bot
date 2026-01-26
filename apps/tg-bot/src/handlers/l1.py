@@ -203,8 +203,21 @@ async def _send_settings_screen(message: Message) -> None:
     )
 
 
-async def _handle_db_error(message: Message, state: FSMContext) -> None:
+async def _handle_db_error(
+    message: Message,
+    state: FSMContext,
+    *,
+    session_id: int | None = None,
+    step: int | None = None,
+) -> None:
     logger.exception("DB operation failed")
+    if session_id is not None or step is not None:
+        _log_l3_step(
+            "invalid",
+            "db_unavailable",
+            session_id=session_id,
+            step=step,
+        )
     await message.answer("⚠️ База данных временно недоступна. Попробуй позже.")
     await state.set_state(UX.l1)
     await message.answer("🏠 Главное меню", reply_markup=build_l1_keyboard(False))
@@ -635,7 +648,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
     try:
         session = get_session_by_sid8(callback.from_user.id, sid8)
     except Exception:
-        await _handle_db_error(callback.message, state)
+        await _handle_db_error(callback.message, state, session_id=None, step=st2)
         await callback.answer()
         return
     if not session or not _is_session_valid(session):
@@ -694,7 +707,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             source_message_id=callback.message.message_id,
         )
     except Exception:
-        await _handle_db_error(callback.message, state)
+        await _handle_db_error(callback.message, state, session_id=session.id, step=st2)
         await callback.answer()
         return
     if result is None:
@@ -827,7 +840,7 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
     try:
         session = get_session_by_sid8(callback.from_user.id, sid8)
     except Exception:
-        await _handle_db_error(callback.message, state)
+        await _handle_db_error(callback.message, state, session_id=None, step=st2)
         await callback.answer()
         return
     if not session or not _is_session_valid(session):
@@ -916,7 +929,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
     try:
         session = get_session_by_sid8(message.from_user.id, sid8)
     except Exception:
-        await _handle_db_error(message, state)
+        await _handle_db_error(message, state, session_id=None, step=int(st2))
         return
     if not session or not _is_session_valid(session):
         _log_l3_step(
@@ -957,7 +970,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             source_message_id=message.message_id,
         )
     except Exception:
-        await _handle_db_error(message, state)
+        await _handle_db_error(message, state, session_id=session.id, step=int(st2))
         return
     if result is None:
         _log_l3_step(

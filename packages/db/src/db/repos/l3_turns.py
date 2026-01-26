@@ -6,7 +6,7 @@ from typing import Any, Callable, Literal
 from db.conn import transaction
 from db.repos import session_events, sessions
 
-L3Outcome = Literal["accepted", "duplicate", "stale"]
+L3Outcome = Literal["accepted", "duplicate", "stale", "invalid"]
 
 
 @dataclass
@@ -38,6 +38,7 @@ def apply_l3_turn_atomic(
     step: int,
     user_input: str | None,
     choice_id: str | None,
+    is_valid: Callable[[dict[str, Any]], bool] | None = None,
     apply_fn: Callable[[dict[str, Any]], L3ApplyPayload],
 ) -> L3ApplyResult | None:
     with transaction() as conn:
@@ -47,6 +48,15 @@ def apply_l3_turn_atomic(
         if int(session_row["step"]) != expected_step:
             return L3ApplyResult(
                 outcome="stale",
+                session_row=session_row,
+                step=int(session_row["step"]),
+                event=None,
+                payload=None,
+            )
+
+        if is_valid is not None and not is_valid(session_row):
+            return L3ApplyResult(
+                outcome="invalid",
                 session_row=session_row,
                 step=int(session_row["step"]),
                 event=None,

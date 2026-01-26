@@ -140,6 +140,15 @@ def apply_l3_turn(
             theme_id=result.session_row.get("theme_id"),
             final_id=None,
         )
+    if result.outcome == "invalid":
+        return L3TurnResult(
+            status="invalid",
+            step_view=None,
+            session_id=int(result.session_row["id"]),
+            step=int(result.session_row["step"]),
+            theme_id=result.session_row.get("theme_id"),
+            final_id=None,
+        )
     if result.outcome == "duplicate":
         step_result_json = None
         if result.event:

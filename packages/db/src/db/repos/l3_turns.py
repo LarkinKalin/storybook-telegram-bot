@@ -46,11 +46,27 @@ def apply_l3_turn_atomic(
         session_row = sessions.get_by_tg_id_sid8_for_update(conn, tg_id=tg_id, sid8=sid8)
         if not session_row:
             return None
-        if int(session_row["step"]) != expected_step:
+        current_step = int(session_row["step"])
+        if current_step != expected_step:
+            existing_event = None
+            if current_step > expected_step:
+                existing_event = session_events.get_by_step(
+                    conn,
+                    session_id=session_row["id"],
+                    step=step,
+                )
+            if existing_event:
+                return L3ApplyResult(
+                    outcome="duplicate",
+                    session_row=session_row,
+                    step=step,
+                    event=existing_event,
+                    payload=None,
+                )
             return L3ApplyResult(
                 outcome="stale",
                 session_row=session_row,
-                step=int(session_row["step"]),
+                step=current_step,
                 event=None,
                 payload=None,
             )

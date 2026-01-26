@@ -12,7 +12,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from src.handlers.l1 import router as l1_router
 from src.handlers.l2 import router as l2_router
 from src.handlers.why import router as why_router
-from db.migrations_runner import apply_migrations
+from db.migrations_runner import apply_pending
 from src.services.theme_registry import registry
 from src.services.whyqa import whyqa
 
@@ -45,8 +45,12 @@ async def main() -> None:
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN is empty. Put it into /etc/skazka/skazka.env (not in repo).")
 
+    db_url = os.getenv("DB_URL", "").strip()
+    migrations_dir = "/app/packages/db/migrations"
+    if not db_url:
+        raise RuntimeError("DB_URL is not set. Put it into /etc/skazka/skazka.env (not in repo).")
     try:
-        apply_migrations()
+        apply_pending(db_url, migrations_dir=migrations_dir)
     except Exception:
         logger.exception("Failed to apply DB migrations")
         raise

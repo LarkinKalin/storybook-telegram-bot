@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import contextmanager
 from typing import Iterator
 
-from psycopg import Connection
+from psycopg import Connection, OperationalError
+from psycopg.errors import DatabaseError
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
 _DB_URL_ENV = "DB_URL"
 _pool: ConnectionPool | None = None
+logger = logging.getLogger(__name__)
+
+
+class DBUnavailable(RuntimeError):
+    pass
 
 
 def _get_db_url() -> str:
@@ -36,12 +43,29 @@ def to_json(value: object | None) -> Json | None:
 
 @contextmanager
 def get_conn() -> Iterator[Connection]:
-    with get_pool().connection() as conn:
-        yield conn
+    try:
+        with get_pool().connection() as conn:
+            yield conn
+    except (OperationalError, DatabaseError) as exc:
+        logger.exception("DB connection failed", exc_info=True)
+        _reset_pool()
+        raise DBUnavailable("DB connection failed") from exc
 
 
 @contextmanager
 def transaction() -> Iterator[Connection]:
-    with get_conn() as conn:
-        with conn.transaction():
-            yield conn
+    try:
+        with get_conn() as conn:
+            with conn.transaction():
+                yield conn
+    except (OperationalError, DatabaseError) as exc:
+        logger.exception("DB transaction failed", exc_info=True)
+        _reset_pool()
+        raise DBUnavailable("DB transaction failed") from exc
+
+
+def _reset_pool() -> None:
+    global _pool
+    if _pool is not None:
+        _pool.close()
+        _pool = None

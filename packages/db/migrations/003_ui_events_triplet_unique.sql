@@ -20,6 +20,8 @@ ALTER TABLE ui_events
 ALTER TABLE ui_events
   DROP CONSTRAINT IF EXISTS ui_events_session_step_kind_unique;
 
+DROP INDEX IF EXISTS ui_events_session_step_kind_unique;
+
 ALTER TABLE ui_events
   ADD CONSTRAINT ui_events_session_step_kind_unique
   UNIQUE (session_id, step, kind);

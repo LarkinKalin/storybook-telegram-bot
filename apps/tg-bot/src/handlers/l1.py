@@ -490,9 +490,9 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Ход уже принят. Сообщение устарело.")
         return
     if result.status == "duplicate":
-        logger.info("TG.6.4.02 duplicate l3 choice")
+        logger.info("TG.6.4.07 outcome=duplicate step0=%s", st2)
     else:
-        logger.info("TG.6.4.02 accepted l3 choice")
+        logger.info("TG.6.4.07 outcome=accepted step0=%s", st2)
     await deliver_step_lock(
         bot=callback.message.bot,
         chat_id=callback.message.chat.id,
@@ -500,6 +500,10 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         session_id=result.session_id,
         step=st2,
     )
+    logger.info("TG.6.4.07 keyboard=cleared msg_id=%s", callback.message.message_id)
+    if result.status == "duplicate":
+        await callback.answer("Ход уже принят. Сообщение устарело.")
+        return
     await deliver_step_view(
         message=callback.message,
         step_view=result.step_view,
@@ -607,9 +611,9 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         await _clear_l3_free_text_state(state)
         return
     if result.status == "duplicate":
-        logger.info("TG.6.4.02 duplicate l3 free_text")
+        logger.info("TG.6.4.07 outcome=duplicate step0=%s", st2)
     else:
-        logger.info("TG.6.4.02 accepted l3 free_text")
+        logger.info("TG.6.4.07 outcome=accepted step0=%s", st2)
         logger.info("TG.6.4.02 outcome=accepted_free_text")
     if session.last_step_message_id:
         await deliver_step_lock(
@@ -619,6 +623,11 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             session_id=result.session_id,
             step=int(st2),
         )
+        logger.info("TG.6.4.07 keyboard=cleared msg_id=%s", session.last_step_message_id)
+    if result.status == "duplicate":
+        await message.answer("Ход уже принят. Сообщение устарело.")
+        await _clear_l3_free_text_state(state)
+        return
     await deliver_step_view(
         message=message,
         step_view=result.step_view,

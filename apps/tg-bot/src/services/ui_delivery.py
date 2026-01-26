@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from dataclasses import dataclass
 from time import time
@@ -12,6 +13,7 @@ from aiogram.types import Message, ReplyKeyboardRemove
 from db.repos import sessions, ui_events
 from src.services.story_runtime import StepView
 
+logger = logging.getLogger(__name__)
 UiDecision = Literal["show", "skip"]
 
 
@@ -105,6 +107,7 @@ async def deliver_step_view(
         sessions.update_last_step(session_id, step_message.message_id, int(time()))
     except Exception:
         return True
+    logger.info("TG.6.4.07 delivery=sent msg_id=%s", step_message.message_id)
     return True
 
 

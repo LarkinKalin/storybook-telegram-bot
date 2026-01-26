@@ -8,7 +8,7 @@ from db.conn import transaction
 from db.repos import session_events, sessions
 from packages.engine.src.engine_v0_1 import apply_turn, init_state_v01
 from src.services.content_stub import build_content_step
-from src.keyboards.l3 import build_l3_keyboard
+from src.keyboards.l3 import build_final_keyboard, build_l3_keyboard
 from src.services.story_runtime import StepView, render_step
 
 TurnStatus = Literal["accepted", "duplicate", "stale"]
@@ -96,12 +96,7 @@ def apply_l3_turn(
                     f"Финал {final_id}.\n"
                     f"Спасибо за игру! Можно начать новую сказку."
                 )
-                final_keyboard = build_l3_keyboard(
-                    [],
-                    allow_free_text=False,
-                    sid8=session_row["sid8"],
-                    step=state["step0"],
-                )
+                final_keyboard = build_final_keyboard()
                 step_view = StepView(
                     text=final_text,
                     keyboard=final_keyboard,
@@ -145,12 +140,7 @@ def apply_l3_turn(
                 f"Финал {step_log['final_id']}.\n"
                 f"Спасибо за игру! Можно начать новую сказку."
             )
-            final_keyboard = build_l3_keyboard(
-                [],
-                allow_free_text=False,
-                sid8=session_row["sid8"],
-                step=new_state["step0"],
-            )
+            final_keyboard = build_final_keyboard()
             step_view = StepView(
                 text=final_text,
                 keyboard=final_keyboard,

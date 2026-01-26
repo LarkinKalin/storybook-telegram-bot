@@ -122,6 +122,7 @@ async def deliver_step_lock(
     message_id: int,
     session_id: int,
     step: int,
+    reply_markup: object | None = None,
     kind: str = "step_locked",
 ) -> bool:
     content_hash_value = content_hash(theme_id=None, text=str(message_id))
@@ -137,7 +138,7 @@ async def deliver_step_lock(
         await bot.edit_message_reply_markup(
             chat_id=chat_id,
             message_id=message_id,
-            reply_markup=None,
+            reply_markup=reply_markup,
         )
     except Exception:
         try:

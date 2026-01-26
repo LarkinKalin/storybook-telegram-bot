@@ -10,6 +10,7 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from src.handlers.l2 import open_l2
 from src.keyboards.l1 import L1Label, build_l1_keyboard
+from src.keyboards.l3 import build_locked_keyboard
 from src.keyboards.help import build_help_keyboard
 from src.keyboards.settings import build_settings_keyboard
 from src.keyboards.shop import build_shop_keyboard
@@ -23,8 +24,10 @@ from src.services.runtime_sessions import (
     is_step_current,
     touch_last_step,
 )
-from src.services.story_runtime import render_step
+from src.services.story_runtime import ensure_engine_state, render_step
 from src.services.ui_delivery import deliver_step_lock, deliver_step_view
+from src.services.content_stub import build_content_step
+from db.repos import session_events
 from src.services.theme_registry import registry
 from src.states import L3, L4, L5, UX
 
@@ -234,6 +237,51 @@ async def _screen_label(state: FSMContext) -> str:
     return "unknown"
 
 
+async def _continue_current(
+    message: Message,
+    state: FSMContext,
+    session: object,
+    *,
+    mode: str,
+) -> None:
+    now_ts = int(time())
+    if (
+        mode == "resume"
+        and getattr(session, "last_step_message_id", None)
+        and getattr(session, "last_step_sent_at", None)
+        and now_ts - session.last_step_sent_at <= 60
+    ):
+        logger.info("TG.6.4.06 outcome=resume_duplicate")
+        return
+    step_view = render_step(session.__dict__)
+    step_text = step_view.text
+    sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
+    step_message = sent_message
+    try:
+        await message.bot.edit_message_text(
+            step_text,
+            chat_id=sent_message.chat.id,
+            message_id=sent_message.message_id,
+            reply_markup=step_view.keyboard,
+        )
+    except Exception:
+        try:
+            await message.bot.delete_message(
+                chat_id=sent_message.chat.id,
+                message_id=sent_message.message_id,
+            )
+        except Exception:
+            pass
+        step_message = await message.answer(step_text, reply_markup=step_view.keyboard)
+    try:
+        touch_last_step(session.tg_id, step_message.message_id, now_ts)
+    except Exception:
+        await _handle_db_error(message, state)
+        return
+    logger.info("TG.6.4.06 outcome=resume_shown")
+    await state.set_state(L3.STEP)
+
+
 async def do_continue(message: Message, state: FSMContext, user_id: int | None = None) -> None:
     if not _is_private(message):
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
@@ -262,54 +310,23 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
         await open_l1(message, state, user_id=tg_id)
         return
 
-    now_ts = int(time())
-    if session.last_step_message_id and session.last_step_sent_at:
-        if now_ts - session.last_step_sent_at <= 60:
-            logger.info("TG.6.4.06 outcome=resume_duplicate")
-            return
-
-    if session.last_step_message_id:
-        try:
-            await message.bot.edit_message_reply_markup(
-                chat_id=message.chat.id,
-                message_id=session.last_step_message_id,
-                reply_markup=None,
-            )
-        except Exception:
-            pass
-
-    step_view = render_step(session.__dict__)
-    step_text = step_view.text
-    sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
-    step_message = sent_message
-    try:
-        await message.bot.edit_message_text(
-            step_text,
-            chat_id=sent_message.chat.id,
-            message_id=sent_message.message_id,
-            reply_markup=step_view.keyboard,
-        )
-    except Exception:
-        try:
-            await message.bot.delete_message(
-                chat_id=sent_message.chat.id,
-                message_id=sent_message.message_id,
-            )
-        except Exception:
-            pass
-        step_message = await message.answer(step_text, reply_markup=step_view.keyboard)
-    try:
-        touch_last_step(tg_id, step_message.message_id, now_ts)
-    except Exception:
-        await _handle_db_error(message, state)
-        return
-    logger.info("TG.6.4.06 outcome=resume_shown")
-    await state.set_state(L3.STEP)
+    await _continue_current(message, state, session, mode="menu")
 
 
 @router.message(Command("resume"))
 async def on_resume(message: Message, state: FSMContext) -> None:
-    await do_continue(message, state)
+    if not _is_private(message):
+        await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
+        return
+    try:
+        session = get_session(message.from_user.id)
+    except Exception:
+        await _handle_db_error(message, state)
+        return
+    if not session or not _is_session_valid(session):
+        await message.answer("Сессия устарела. Нажми /resume.")
+        return
+    await _continue_current(message, state, session, mode="resume")
 
 
 @router.message(Command("status"))
@@ -375,6 +392,15 @@ async def on_go_l1(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+@router.callback_query(lambda query: query.data == "go:start")
+async def on_go_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+    await open_l2(callback.message, state)
+    await callback.answer()
+
+
 @router.callback_query(lambda query: query.data == "go:help")
 async def on_go_help(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message:
@@ -435,6 +461,46 @@ async def _clear_l3_free_text_state(state: FSMContext) -> None:
     await state.update_data(l3_sid8=None, l3_st2=None)
 
 
+def _locked_rows_from_markup(markup: object | None) -> list[list[dict]]:
+    if not markup or not getattr(markup, "inline_keyboard", None):
+        return []
+    rows: list[list[dict]] = []
+    for row in markup.inline_keyboard:
+        locked_row: list[dict] = []
+        for button in row:
+            choice_id = "locked"
+            if button.callback_data:
+                parts = button.callback_data.split(":")
+                if len(parts) >= 3 and parts[0] == "l3" and parts[1] == "choice":
+                    choice_id = parts[2]
+                elif button.callback_data.startswith("l3:free_text"):
+                    choice_id = "free_text"
+                elif button.callback_data == "go:l1":
+                    choice_id = "menu"
+            locked_row.append({"text": button.text, "choice_id": choice_id})
+        rows.append(locked_row)
+    return rows
+
+
+def _locked_rows_from_content(session: object, step: int) -> list[list[dict]]:
+    state = ensure_engine_state(session.__dict__)
+    if int(state.get("step0", 0)) != int(step):
+        return []
+    content = build_content_step(session.theme_id, state["step0"], state)
+    rows: list[list[dict]] = []
+    if content.get("choices"):
+        rows.append(
+            [
+                {"text": choice["label"], "choice_id": choice["choice_id"]}
+                for choice in content["choices"]
+            ]
+        )
+    if state.get("free_text_allowed_after"):
+        rows.append([{"text": "✍️ Свой вариант", "choice_id": "free_text"}])
+    rows.append([{"text": "⬅ В меню", "choice_id": "menu"}])
+    return rows
+
+
 @router.callback_query(lambda query: query.data and query.data.startswith("l3:choice:"))
 async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
@@ -469,6 +535,13 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         logger.info("TG.6.4.02 future l3 choice (step ahead)")
         await callback.answer("Ход уже принят. Сообщение устарело.")
         return
+    state_snapshot = ensure_engine_state(session.__dict__)
+    content_snapshot = build_content_step(session.theme_id, state_snapshot["step0"], state_snapshot)
+    choice_label = None
+    for choice in content_snapshot.get("choices", []):
+        if choice["choice_id"] == choice_id:
+            choice_label = choice["label"]
+            break
     turn = {"kind": "choice", "choice_id": choice_id}
     try:
         result = apply_l3_turn(
@@ -493,17 +566,26 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         logger.info("TG.6.4.07 outcome=duplicate step0=%s", st2)
     else:
         logger.info("TG.6.4.07 outcome=accepted step0=%s", st2)
+    locked_rows = _locked_rows_from_markup(callback.message.reply_markup)
+    if not locked_rows:
+        locked_rows = _locked_rows_from_content(session, st2)
+    locked_keyboard = (
+        build_locked_keyboard(locked_rows, sid8, st2) if locked_rows else None
+    )
     await deliver_step_lock(
         bot=callback.message.bot,
         chat_id=callback.message.chat.id,
         message_id=callback.message.message_id,
         session_id=result.session_id,
         step=st2,
+        reply_markup=locked_keyboard,
     )
     logger.info("TG.6.4.07 keyboard=cleared msg_id=%s", callback.message.message_id)
     if result.status == "duplicate":
         await callback.answer("Ход уже принят. Сообщение устарело.")
         return
+    if choice_label:
+        await callback.message.answer(f"Твой выбор: {choice_label}")
     await deliver_step_view(
         message=callback.message,
         step_view=result.step_view,
@@ -514,6 +596,11 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(L3.STEP)
     await _clear_l3_free_text_state(state)
     await callback.answer()
+
+
+@router.callback_query(lambda query: query.data and query.data.startswith("locked:"))
+async def on_locked_step(callback: CallbackQuery) -> None:
+    await callback.answer("Этот шаг уже сыгран")
 
 
 @router.callback_query(lambda query: query.data and query.data.startswith("l3:free_text"))
@@ -550,6 +637,10 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
         return
     if not is_step_current(callback.from_user.id, sid8, st2):
         logger.info("TG.6.4.02 stale l3 free_text (step check)")
+        await callback.answer("Ход уже принят. Сообщение устарело.")
+        return
+    if session_events.exists_for_step(session.id, st2):
+        logger.info("TG.6.4.02 outcome=ignored_locked_or_stale")
         await callback.answer("Ход уже принят. Сообщение устарело.")
         return
     await state.set_state(L3.FREE_TEXT)
@@ -616,18 +707,24 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         logger.info("TG.6.4.07 outcome=accepted step0=%s", st2)
         logger.info("TG.6.4.02 outcome=accepted_free_text")
     if session.last_step_message_id:
+        locked_rows = _locked_rows_from_content(session, int(st2))
+        locked_keyboard = (
+            build_locked_keyboard(locked_rows, sid8, int(st2)) if locked_rows else None
+        )
         await deliver_step_lock(
             bot=message.bot,
             chat_id=message.chat.id,
             message_id=session.last_step_message_id,
             session_id=result.session_id,
             step=int(st2),
+            reply_markup=locked_keyboard,
         )
         logger.info("TG.6.4.07 keyboard=cleared msg_id=%s", session.last_step_message_id)
     if result.status == "duplicate":
         await message.answer("Ход уже принят. Сообщение устарело.")
         await _clear_l3_free_text_state(state)
         return
+    await message.answer(f"Твой выбор: {message.text}")
     await deliver_step_view(
         message=message,
         step_view=result.step_view,

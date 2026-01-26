@@ -49,6 +49,12 @@ def build_final_step_result(
     }
 
 
+def expected_type_for_step(step0: int, total_steps: int) -> str:
+    if step0 >= total_steps - 1:
+        return "story_final"
+    return "story_step"
+
+
 def ensure_engine_state(session_row: Dict) -> Dict:
     params = session_row.get("params_json") or {}
     if not isinstance(params, dict) or params.get("v") != "0.1":
@@ -90,7 +96,7 @@ def build_step_result(
         "final_id": None,
     }
     step_ctx = {
-        "expected_type": "story_step",
+        "expected_type": expected_type_for_step(state["step0"], state["n"]),
         "req_id": req_id,
         "theme_id": session_row.get("theme_id"),
         "step": state.get("step0"),

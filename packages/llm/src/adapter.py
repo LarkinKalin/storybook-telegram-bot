@@ -40,7 +40,18 @@ def _normalize_mock_mode() -> str:
     base = raw
     if raw.endswith("_once") or raw.endswith("_always"):
         base = raw.rsplit("_", 1)[0]
-    if base not in {"ok", "invalid_json", "timeout", "type_mismatch"}:
+    if base not in {
+        "ok",
+        "ok_step_3",
+        "ok_step_2",
+        "ok_step_1",
+        "ok_step_0",
+        "ok_final",
+        "invalid_json",
+        "schema_invalid",
+        "timeout",
+        "type_mismatch",
+    }:
         logger.warning("llm.adapter unknown mock_mode=%s fallback=ok", raw)
         return "ok"
     return raw
@@ -95,6 +106,9 @@ def _generate_with_provider(
                 expected_type,
                 attempt,
             )
+            if attempt == 1:
+                attempt = 2
+                continue
             break
 
         parsed_json, error_reason = validate_response(last_raw_text, expected_type)
@@ -112,7 +126,7 @@ def _generate_with_provider(
                 expected_type,
                 attempt,
             )
-            if error_reason == "invalid_json" and attempt == 1:
+            if attempt == 1:
                 attempt = 2
                 continue
             break

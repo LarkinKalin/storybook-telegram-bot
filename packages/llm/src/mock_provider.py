@@ -28,9 +28,24 @@ class MockProvider:
             raise TimeoutError("mock timeout")
         if mode == "invalid_json":
             return "<<<not json>>>"
+        if mode == "schema_invalid":
+            return self._build_schema_invalid(step_ctx)
         if mode == "type_mismatch":
             mismatched_type = "story_final" if expected_type == "story_step" else "story_step"
             return self._build_payload(mismatched_type, step_ctx)
+        if mode == "ok_final":
+            return self._build_payload("story_final", step_ctx)
+        if mode.startswith("ok_step_"):
+            count_str = mode.removeprefix("ok_step_")
+            try:
+                count = int(count_str)
+            except ValueError:
+                count = 3
+            return self._build_step_payload(step_ctx, max(count, 0))
+        if mode == "ok":
+            if expected_type == "story_final":
+                return self._build_payload("story_final", step_ctx)
+            return self._build_step_payload(step_ctx, 3)
         return self._build_payload(expected_type, step_ctx)
 
     def _build_payload(self, expected_type: str | None, step_ctx: Dict[str, Any]) -> str:
@@ -45,17 +60,38 @@ class MockProvider:
             }
             return json.dumps(payload, ensure_ascii=False)
 
+        return self._build_step_payload(step_ctx, 3)
+
+    def _build_step_payload(self, step_ctx: Dict[str, Any], count: int) -> str:
         step = step_ctx.get("step")
         total_steps = step_ctx.get("total_steps")
         header = "Новый шаг истории."
         if isinstance(step, int) and isinstance(total_steps, int):
             header = f"Шаг {step + 1}/{total_steps}."
+        labels = [
+            ("A", "A — Смелый путь"),
+            ("B", "B — Осторожный путь"),
+            ("C", "C — Необычный путь"),
+        ]
+        choices = [
+            {"choice_id": choice_id, "label": label}
+            for choice_id, label in labels[: max(0, min(count, 3))]
+        ]
         payload = {
             "text": f"{header} Выберите действие героя:",
+            "choices": choices,
+            "memory": None,
+        }
+        return json.dumps(payload, ensure_ascii=False)
+
+    def _build_schema_invalid(self, step_ctx: Dict[str, Any]) -> str:
+        payload = {
+            "text": "Неверный шаг.",
             "choices": [
-                {"choice_id": "A", "label": "A — Смелый путь"},
-                {"choice_id": "B", "label": "B — Осторожный путь"},
-                {"choice_id": "C", "label": "C — Необычный путь"},
+                {"choice_id": "A", "label": "A — Раз"},
+                {"choice_id": "B", "label": "B — Два"},
+                {"choice_id": "C", "label": "C — Три"},
+                {"choice_id": "D", "label": "D — Четыре"},
             ],
             "memory": None,
         }

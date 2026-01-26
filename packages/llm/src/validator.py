@@ -13,35 +13,48 @@ def validate_response(raw_text: str, expected_type: str) -> Tuple[Dict[str, Any]
         return None, "invalid_json"
 
     if expected_type == "story_step":
-        if not _validate_story_step(parsed):
-            return None, "type_mismatch"
+        ok, reason = _validate_story_step(parsed)
+        if not ok:
+            return None, reason
         return parsed, None
     if expected_type == "story_final":
-        if not _validate_story_final(parsed):
-            return None, "type_mismatch"
+        ok, reason = _validate_story_final(parsed)
+        if not ok:
+            return None, reason
         return parsed, None
     return None, "type_mismatch"
 
 
-def _validate_story_step(parsed: Dict[str, Any]) -> bool:
+def _validate_story_step(parsed: Dict[str, Any]) -> Tuple[bool, str]:
     text = parsed.get("text")
     if not isinstance(text, str) or not text.strip():
-        return False
+        return False, "schema_invalid"
+    if "choices" not in parsed:
+        return False, "type_mismatch"
     choices = parsed.get("choices")
-    if not isinstance(choices, list) or len(choices) < 3:
-        return False
-    choice_ids = []
-    for choice in choices[:3]:
+    if not isinstance(choices, list):
+        return False, "schema_invalid"
+    if len(choices) > 3:
+        return False, "schema_invalid"
+    for choice in choices:
         if not isinstance(choice, dict):
-            return False
+            return False, "schema_invalid"
         choice_id = choice.get("choice_id")
         label = choice.get("label") or choice.get("text")
         if not isinstance(choice_id, str) or not isinstance(label, str):
-            return False
-        choice_ids.append(choice_id)
-    return set(choice_ids) >= {"A", "B", "C"}
+            return False, "schema_invalid"
+    return True, ""
 
 
-def _validate_story_final(parsed: Dict[str, Any]) -> bool:
+def _validate_story_final(parsed: Dict[str, Any]) -> Tuple[bool, str]:
     text = parsed.get("text")
-    return isinstance(text, str) and bool(text.strip())
+    if not isinstance(text, str) or not text.strip():
+        return False, "schema_invalid"
+    if "choices" in parsed:
+        choices = parsed.get("choices")
+        if choices is None:
+            return True, ""
+        if not isinstance(choices, list):
+            return False, "schema_invalid"
+        return False, "type_mismatch"
+    return True, ""

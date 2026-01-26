@@ -20,6 +20,12 @@ Install dev dependencies (including psycopg for DB tests):
 python -m pip install -r requirements-dev.txt
 ```
 
+Run the L3 concurrency test (starts/stops Postgres via compose):
+
+```bash
+packages/db/scripts/run_concurrency_test.sh
+```
+
 This creates a session, applies three turns (A/B/C), and prints the resulting
 `sessions.params_json`, `sessions.ending_id`, and `session_events` rows.
 

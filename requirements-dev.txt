@@ -1,2 +1,3 @@
 -r apps/tg-bot/requirements.txt
 psycopg[binary,pool]==3.2.1
+pytest

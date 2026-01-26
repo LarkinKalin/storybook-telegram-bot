@@ -211,17 +211,22 @@ async def _handle_db_error(
     step: int | None = None,
     step0: int | None = None,
     req_id: str | None = None,
+    exc: Exception | None = None,
 ) -> None:
+    reason = _db_error_reason(exc)
     if session_id is not None or step is not None:
         _log_l3_step(
             "invalid",
-            "db_unavailable",
+            reason,
             session_id=session_id,
             step=step,
             step0=step0,
             req_id=req_id,
         )
-    logger.warning("DB operation failed: db_unavailable")
+    if exc is not None:
+        logger.error("DB operation failed: %s", reason, exc_info=exc)
+    else:
+        logger.error("DB operation failed: %s", reason)
     await message.answer("⚠️ База данных временно недоступна. Попробуй позже.")
     await state.set_state(UX.l1)
     await message.answer("🏠 Главное меню", reply_markup=build_l1_keyboard(False))
@@ -290,6 +295,17 @@ def _req_id_from_update(message: Message | None, callback: CallbackQuery | None)
     if message and getattr(message, "message_id", None):
         return str(message.message_id)
     return None
+
+
+def _db_error_reason(exc: Exception | None) -> str:
+    if exc is None:
+        return "db_unavailable"
+    msg = str(exc).lower()
+    if "does not exist" in msg or "undefined table" in msg:
+        return "db_schema_missing"
+    if "could not connect" in msg or "connection refused" in msg or "connection" in msg:
+        return "db_connect_failed"
+    return "db_tx_failed"
 
 
 async def _deliver_current_step(
@@ -367,8 +383,8 @@ async def _continue_current(
         step_message = await message.answer(step_text, reply_markup=step_view.keyboard)
     try:
         touch_last_step(session.tg_id, step_message.message_id, now_ts)
-    except Exception:
-        await _handle_db_error(message, state)
+    except Exception as exc:
+        await _handle_db_error(message, state, exc=exc)
         return
     try:
         ui_events.mark_shown(acquire.event_id, step_message_id=step_message.message_id)
@@ -392,8 +408,8 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
 
     try:
         session = get_session(tg_id)
-    except Exception:
-        await _handle_db_error(message, state)
+    except Exception as exc:
+        await _handle_db_error(message, state, exc=exc)
         return
 
     if not session:
@@ -405,8 +421,8 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
     if not _is_session_valid(session):
         try:
             abort_session(tg_id)
-        except Exception:
-            await _handle_db_error(message, state)
+        except Exception as exc:
+            await _handle_db_error(message, state, exc=exc)
             return
         await message.answer("Сессия потерялась. Начни заново.")
         await open_l1(message, state, user_id=tg_id)
@@ -422,8 +438,8 @@ async def on_resume(message: Message, state: FSMContext) -> None:
         return
     try:
         session = get_session(message.from_user.id)
-    except Exception:
-        await _handle_db_error(message, state)
+    except Exception as exc:
+        await _handle_db_error(message, state, exc=exc)
         return
     if not session or not _is_session_valid(session):
         logger.info(
@@ -443,8 +459,8 @@ async def on_status(message: Message, state: FSMContext) -> None:
 
     try:
         session = get_session(message.from_user.id)
-    except Exception:
-        await _handle_db_error(message, state)
+    except Exception as exc:
+        await _handle_db_error(message, state, exc=exc)
         return
     active = session is not None
     screen = await _screen_label(state)
@@ -465,8 +481,8 @@ async def on_status(message: Message, state: FSMContext) -> None:
         lines.append("theme: unknown")
         try:
             abort_session(message.from_user.id)
-        except Exception:
-            await _handle_db_error(message, state)
+        except Exception as exc:
+            await _handle_db_error(message, state, exc=exc)
             return
     await message.answer("\n".join(lines))
 
@@ -669,7 +685,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
     choice_id, sid8, st2 = payload
     try:
         session = get_session_by_sid8(callback.from_user.id, sid8)
-    except Exception:
+    except Exception as exc:
         await _handle_db_error(
             callback.message,
             state,
@@ -677,6 +693,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             step=st2,
             step0=None,
             req_id=_req_id_from_update(callback.message, callback),
+            exc=exc,
         )
         await callback.answer()
         return
@@ -744,7 +761,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             source_message_id=callback.message.message_id,
             req_id=_req_id_from_update(callback.message, callback),
         )
-    except Exception:
+    except Exception as exc:
         await _handle_db_error(
             callback.message,
             state,
@@ -752,6 +769,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             step=st2,
             step0=st2,
             req_id=_req_id_from_update(callback.message, callback),
+            exc=exc,
         )
         await callback.answer()
         return
@@ -898,7 +916,7 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
     sid8, st2 = payload
     try:
         session = get_session_by_sid8(callback.from_user.id, sid8)
-    except Exception:
+    except Exception as exc:
         await _handle_db_error(
             callback.message,
             state,
@@ -906,6 +924,7 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             step=st2,
             step0=None,
             req_id=_req_id_from_update(callback.message, callback),
+            exc=exc,
         )
         await callback.answer()
         return
@@ -1008,7 +1027,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         return
     try:
         session = get_session_by_sid8(message.from_user.id, sid8)
-    except Exception:
+    except Exception as exc:
         await _handle_db_error(
             message,
             state,
@@ -1016,6 +1035,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             step=int(st2),
             step0=None,
             req_id=_req_id_from_update(message, None),
+            exc=exc,
         )
         return
     if not session or not _is_session_valid(session):
@@ -1063,7 +1083,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             source_message_id=message.message_id,
             req_id=_req_id_from_update(message, None),
         )
-    except Exception:
+    except Exception as exc:
         await _handle_db_error(
             message,
             state,
@@ -1071,6 +1091,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             step=int(st2),
             step0=int(st2),
             req_id=_req_id_from_update(message, None),
+            exc=exc,
         )
         return
     if result is None:

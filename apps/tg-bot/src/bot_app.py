@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import signal
+import sys
 import time
 
 from aiohttp import ClientConnectionError, ServerDisconnectedError
@@ -25,7 +26,21 @@ dp.include_router(l2_router)
 dp.include_router(why_router)
 
 
+def setup_logging() -> None:
+    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    level = logging.getLevelName(level_name)
+    if isinstance(level, str):
+        level = logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=sys.stdout,
+        force=True,
+    )
+
+
 async def main() -> None:
+    setup_logging()
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN is empty. Put it into /etc/skazka/skazka.env (not in repo).")
 
@@ -41,7 +56,7 @@ async def main() -> None:
     def _handle_sigterm() -> None:
         if stop_event.is_set():
             return
-        logger.info("Received SIGTERM, shutting down polling.")
+        logger.warning("Received SIGTERM, shutting down polling.")
         stop_event.set()
 
     loop = asyncio.get_running_loop()

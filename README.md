@@ -4,6 +4,7 @@
 - Postgres
 - Docker Compose v2
 - Secrets: /etc/skazka/skazka.env
+- LOG_LEVEL: optional env (default INFO) for tg-bot logging
 
 ## TG.4.2.01 smoke check (no Telegram required)
 Run from repo root with DB_URL pointing at Postgres:

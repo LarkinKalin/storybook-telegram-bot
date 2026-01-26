@@ -7,6 +7,7 @@ def test_generate_ok(monkeypatch):
     result = generate({"expected_type": "story_step", "req_id": "req-1"})
     assert result.expected_type == "story_step"
     assert result.used_fallback is False
+    assert result.skipped is False
     assert result.parsed_json is not None
     assert result.parsed_json["text"]
     assert len(result.parsed_json["choices"]) == 3
@@ -17,6 +18,7 @@ def test_invalid_json_retry_fallback(monkeypatch):
     monkeypatch.setenv("LLM_MOCK_MODE", "invalid_json_always")
     result = generate({"expected_type": "story_step", "req_id": "req-2"})
     assert result.used_fallback is True
+    assert result.skipped is False
     assert result.parsed_json is not None
     assert result.error_reason == "invalid_json"
 
@@ -26,6 +28,7 @@ def test_timeout_retry_fallback(monkeypatch):
     monkeypatch.setenv("LLM_MOCK_MODE", "timeout_always")
     result = generate({"expected_type": "story_step", "req_id": "req-3"})
     assert result.used_fallback is True
+    assert result.skipped is False
     assert result.parsed_json is not None
     assert result.error_reason == "timeout"
 
@@ -35,5 +38,14 @@ def test_type_mismatch_retry_fallback(monkeypatch):
     monkeypatch.setenv("LLM_MOCK_MODE", "type_mismatch_always")
     result = generate({"expected_type": "story_step", "req_id": "req-4"})
     assert result.used_fallback is True
+    assert result.skipped is False
     assert result.parsed_json is not None
     assert result.error_reason == "type_mismatch"
+
+
+def test_provider_off_skips(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "off")
+    result = generate({"expected_type": "story_step", "req_id": "req-5"})
+    assert result.used_fallback is False
+    assert result.skipped is True
+    assert result.parsed_json is None

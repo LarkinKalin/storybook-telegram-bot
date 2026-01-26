@@ -18,6 +18,7 @@ class LLMResult:
     raw_text: str
     parsed_json: Optional[Dict[str, Any]]
     used_fallback: bool
+    skipped: bool
     error_class: Optional[str]
     error_reason: Optional[str]
 
@@ -55,6 +56,7 @@ def generate(step_ctx: Dict[str, Any]) -> LLMResult:
             raw_text="",
             parsed_json=None,
             used_fallback=False,
+            skipped=True,
             error_class=None,
             error_reason=None,
         )
@@ -80,7 +82,8 @@ def _generate_with_provider(
     last_error_reason: Optional[str] = None
     last_raw_text = ""
 
-    for attempt in (1, 2):
+    attempt = 1
+    while True:
         try:
             last_raw_text = provider.generate(step_ctx)
         except Exception as exc:  # noqa: BLE001
@@ -92,9 +95,7 @@ def _generate_with_provider(
                 expected_type,
                 attempt,
             )
-            if attempt == 2:
-                break
-            continue
+            break
 
         parsed_json, error_reason = validate_response(last_raw_text, expected_type)
         if error_reason:
@@ -111,9 +112,10 @@ def _generate_with_provider(
                 expected_type,
                 attempt,
             )
-            if attempt == 2:
-                break
-            continue
+            if error_reason == "invalid_json" and attempt == 1:
+                attempt = 2
+                continue
+            break
 
         logger.info(
             "llm.adapter provider=%s expected=%s attempt=%s outcome=ok",
@@ -126,6 +128,7 @@ def _generate_with_provider(
             raw_text=last_raw_text,
             parsed_json=parsed_json,
             used_fallback=False,
+            skipped=False,
             error_class=None,
             error_reason=None,
         )
@@ -142,6 +145,7 @@ def _generate_with_provider(
         raw_text=last_raw_text,
         parsed_json=fallback_json,
         used_fallback=True,
+        skipped=False,
         error_class=last_error_class,
         error_reason=last_error_reason,
     )

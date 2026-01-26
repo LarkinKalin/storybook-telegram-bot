@@ -47,3 +47,4 @@ YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINA
 2026-01-25 | TG.6.4.02 | DONE | L3 stale/invalid callback handling + ui_events dedup key
 2026-01-25 | TG.6.4.06 | DONE | /resume idempotency: skip duplicate step delivery
 2026-01-25 | TG.6.4.08 | DONE | L3 UX hardening: locked step UI + unified continue + free-text race guard
+2026-01-25 | TG.6.4.09 | DONE | L3 UX hardening: lock after accept + resume idempotency + ending step final + global commands

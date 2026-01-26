@@ -27,6 +27,15 @@ def ensure_engine_state(session_row: Dict) -> Dict:
 
 def render_step(session_row: Dict, state: Dict | None = None) -> StepView:
     state = state or ensure_engine_state(session_row)
+    if state["step0"] >= state["n"]:
+        final_text = "Сказка завершена. Можно начать новую."
+        keyboard = build_l3_keyboard(
+            [],
+            allow_free_text=False,
+            sid8=session_row["sid8"],
+            step=state["step0"],
+        )
+        return StepView(text=final_text, keyboard=keyboard)
     content = build_content_step(session_row["theme_id"], state["step0"], state)
     choices = content["choices"]
     text_lines = [

@@ -249,7 +249,7 @@ async def _continue_current(
         mode == "resume"
         and getattr(session, "last_step_message_id", None)
         and getattr(session, "last_step_sent_at", None)
-        and now_ts - session.last_step_sent_at <= 60
+        and now_ts - session.last_step_sent_at <= 5
     ):
         logger.info("TG.6.4.06 outcome=resume_duplicate")
         return
@@ -372,6 +372,20 @@ async def on_help(message: Message, state: FSMContext) -> None:
         return
     await state.set_state(L4.HELP)
     await _send_help_screen(message)
+
+
+@router.message(Command("settings"))
+async def on_settings(message: Message, state: FSMContext) -> None:
+    if not _is_private(message):
+        await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
+        return
+    await state.set_state(L4.SETTINGS)
+    await _send_settings_screen(message)
+
+
+@router.message(Command("menu"))
+async def on_menu(message: Message, state: FSMContext) -> None:
+    await open_l1(message, state)
 
 
 @router.message(Command("shop"))
@@ -640,8 +654,8 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Ход уже принят. Сообщение устарело.")
         return
     if session_events.exists_for_step(session.id, st2):
-        logger.info("TG.6.4.02 outcome=ignored_locked_or_stale")
-        await callback.answer("Ход уже принят. Сообщение устарело.")
+        logger.info("TG.6.4.09 outcome=locked step0=%s", st2)
+        await callback.answer("Этот шаг уже сыгран")
         return
     await state.set_state(L3.FREE_TEXT)
     await state.update_data(l3_sid8=sid8, l3_st2=st2)
@@ -661,7 +675,6 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
     st2 = state_data.get("l3_st2")
     if not sid8 or st2 is None:
         logger.info("TG.6.4.02 outcome=text_ignored_not_awaiting")
-        await message.answer("Ход уже принят. Сообщение устарело.")
         return
     try:
         session = get_session_by_sid8(message.from_user.id, sid8)
@@ -674,11 +687,9 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
     if int(st2) != session.step:
         if int(st2) < session.step:
             logger.info("TG.6.4.02 outcome=text_stale_step_mismatch")
-            await message.answer("Ход уже принят. Сообщение устарело.")
             await _clear_l3_free_text_state(state)
             return
         logger.info("TG.6.4.02 outcome=text_stale_step_mismatch")
-        await message.answer("Ход уже принят. Сообщение устарело.")
         await _clear_l3_free_text_state(state)
         return
     turn = {"kind": "free_text", "text": message.text}
@@ -698,7 +709,6 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         return
     if result.status == "stale":
         logger.info("TG.6.4.02 stale l3 free_text (tx)")
-        await message.answer("Ход уже принят. Сообщение устарело.")
         await _clear_l3_free_text_state(state)
         return
     if result.status == "duplicate":
@@ -721,7 +731,6 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         )
         logger.info("TG.6.4.07 keyboard=cleared msg_id=%s", session.last_step_message_id)
     if result.status == "duplicate":
-        await message.answer("Ход уже принят. Сообщение устарело.")
         await _clear_l3_free_text_state(state)
         return
     await message.answer(f"Твой выбор: {message.text}")

@@ -8,6 +8,8 @@ services:
       - /etc/skazka/skazka.env
     environment:
       - SKAZKA_CONTENT_DIR=/app/content
+      - LLM_PROVIDER=${LLM_PROVIDER:-off}
+      - LLM_MOCK_MODE=${LLM_MOCK_MODE:-ok}
     volumes:
       - ../../content:/app/content:ro
     restart: unless-stopped

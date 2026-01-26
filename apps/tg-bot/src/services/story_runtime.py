@@ -5,6 +5,7 @@ from typing import Dict, Optional
 
 from db.repos import sessions
 from packages.engine.src.engine_v0_1 import init_state_v01
+from packages.llm.src import generate as llm_generate
 from src.keyboards.l3 import build_final_keyboard, build_l3_keyboard
 from src.services.content_stub import build_content_step
 
@@ -16,7 +17,12 @@ class StepView:
     final_id: Optional[str] = None
 
 
-def build_final_step_result(final_id: str | None) -> Dict:
+def build_final_step_result(
+    final_id: str | None,
+    *,
+    theme_id: str | None = None,
+    req_id: str | None = None,
+) -> Dict:
     if final_id:
         final_text = (
             f"Финал {final_id}.\n"
@@ -24,6 +30,17 @@ def build_final_step_result(final_id: str | None) -> Dict:
         )
     else:
         final_text = "Сказка завершена. Можно начать новую."
+    step_ctx = {
+        "expected_type": "story_final",
+        "req_id": req_id,
+        "final_id": final_id,
+        "theme_id": theme_id,
+    }
+    llm_result = llm_generate(step_ctx)
+    if llm_result.parsed_json:
+        llm_text = llm_result.parsed_json.get("text")
+        if isinstance(llm_text, str) and llm_text.strip():
+            final_text = llm_text
     return {
         "text": final_text,
         "choices": [],
@@ -41,10 +58,19 @@ def ensure_engine_state(session_row: Dict) -> Dict:
     return params
 
 
-def build_step_result(session_row: Dict, state: Dict | None = None) -> Dict:
+def build_step_result(
+    session_row: Dict,
+    state: Dict | None = None,
+    *,
+    req_id: str | None = None,
+) -> Dict:
     state = state or ensure_engine_state(session_row)
     if state["step0"] >= state["n"] - 1:
-        return build_final_step_result(final_id=None)
+        return build_final_step_result(
+            final_id=None,
+            theme_id=session_row.get("theme_id"),
+            req_id=req_id,
+        )
     content = build_content_step(session_row["theme_id"], state["step0"], state)
     choices = content["choices"]
     text_lines = [
@@ -57,12 +83,36 @@ def build_step_result(session_row: Dict, state: Dict | None = None) -> Dict:
     keyboard_choices = [
         {"choice_id": choice["choice_id"], "label": choice["label"]} for choice in choices
     ]
-    return {
+    step_result = {
         "text": "\n".join(text_lines),
         "choices": keyboard_choices,
         "allow_free_text": state["free_text_allowed_after"],
         "final_id": None,
     }
+    step_ctx = {
+        "expected_type": "story_step",
+        "req_id": req_id,
+        "theme_id": session_row.get("theme_id"),
+        "step": state.get("step0"),
+        "total_steps": state.get("n"),
+        "allow_free_text": state.get("free_text_allowed_after"),
+    }
+    llm_result = llm_generate(step_ctx)
+    if llm_result.parsed_json:
+        llm_text = llm_result.parsed_json.get("text")
+        if isinstance(llm_text, str) and llm_text.strip():
+            step_result["text"] = llm_text
+        llm_choices = []
+        for choice in llm_result.parsed_json.get("choices", []):
+            if not isinstance(choice, dict):
+                continue
+            choice_id = choice.get("choice_id") or choice.get("id")
+            label = choice.get("label") or choice.get("text")
+            if isinstance(choice_id, str) and isinstance(label, str):
+                llm_choices.append({"choice_id": choice_id, "label": label})
+        if llm_choices:
+            step_result["choices"] = llm_choices
+    return step_result
 
 
 def step_result_to_view(step_result: Dict, sid8: str, step: int) -> StepView:

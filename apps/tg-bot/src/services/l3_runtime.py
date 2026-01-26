@@ -96,10 +96,16 @@ def apply_l3_turn(
         }
         deltas_json = {"applied_deltas": step_log["applied_deltas"]}
         if step_log["final_id"]:
-            step_result_json = build_final_step_result(step_log["final_id"])
+            step_result_json = build_final_step_result(
+                step_log["final_id"],
+                theme_id=session_row.get("theme_id"),
+                req_id=req_id,
+            )
         else:
             step_result_json = build_step_result(
-                {**session_row, "params_json": new_state}, state=new_state
+                {**session_row, "params_json": new_state},
+                state=new_state,
+                req_id=req_id,
             )
         finish_status = None
         final_id = step_log["final_id"]

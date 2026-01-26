@@ -50,4 +50,4 @@ YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINA
 2026-01-25 | TG.6.4.09 | DONE | L3 UX hardening: lock after accept + resume idempotency + ending step final + global commands
 2026-01-25 | TG.6.4.10 | DONE | Continue/Resume unification + idempotency guard + global commands
 2026-01-26 | TG.6.5.01 | DONE | Atomic L3 + migrations runner + concurrency test
-2026-01-26 | TG.6.5.01B | DONE | L3 step outcomes (accepted/duplicate/stale/invalid) + recoverability
+2026-01-27 | TG.7.1.01 | DONE | LLM adapter v0.1 (mock-first) + L3 integration behind flag

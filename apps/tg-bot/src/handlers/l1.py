@@ -309,6 +309,81 @@ async def _continue_current(
     await state.set_state(L3.STEP)
 
 
+async def _continue_current(
+    message: Message,
+    state: FSMContext,
+    session: object,
+    *,
+    source: str,
+) -> None:
+    now_ts = int(time())
+    if (
+        source == "resume_cmd"
+        and getattr(session, "last_step_message_id", None)
+        and getattr(session, "last_step_sent_at", None)
+        and now_ts - session.last_step_sent_at <= 5
+    ):
+        logger.info(
+            "TG.6.4.10 continue source=%s outcome=duplicate_window session_id=%s step=%s",
+            source,
+            session.id,
+            session.step,
+        )
+        return
+    kind = "resume_shown" if source == "resume_cmd" else "continue_shown"
+    dedup_hash = content_hash(theme_id=None, text=f"{kind}:{session.step}")
+    acquire = acquire_step_event(
+        session_id=session.id,
+        step=session.step,
+        kind=kind,
+        content_hash_value=dedup_hash,
+    )
+    if acquire.decision != "show" or acquire.event_id is None:
+        logger.info(
+            "TG.6.4.10 continue source=%s outcome=duplicate_window session_id=%s step=%s",
+            source,
+            session.id,
+            session.step,
+        )
+        return
+    step_view = render_step(session.__dict__)
+    step_text = step_view.text
+    sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
+    step_message = sent_message
+    try:
+        await message.bot.edit_message_text(
+            step_text,
+            chat_id=sent_message.chat.id,
+            message_id=sent_message.message_id,
+            reply_markup=step_view.keyboard,
+        )
+    except Exception:
+        try:
+            await message.bot.delete_message(
+                chat_id=sent_message.chat.id,
+                message_id=sent_message.message_id,
+            )
+        except Exception:
+            pass
+        step_message = await message.answer(step_text, reply_markup=step_view.keyboard)
+    try:
+        touch_last_step(session.tg_id, step_message.message_id, now_ts)
+    except Exception:
+        await _handle_db_error(message, state)
+        return
+    try:
+        ui_events.mark_shown(acquire.event_id, step_message_id=step_message.message_id)
+    except Exception:
+        pass
+    logger.info(
+        "TG.6.4.10 continue source=%s outcome=shown session_id=%s step=%s",
+        source,
+        session.id,
+        session.step,
+    )
+    await state.set_state(L3.STEP)
+
+
 async def do_continue(message: Message, state: FSMContext, user_id: int | None = None) -> None:
     if not _is_private(message):
         await message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
@@ -323,6 +398,7 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
         return
 
     if not session:
+        logger.info("TG.6.4.10 continue source=menu outcome=no_active tg_id=%s", tg_id)
         await message.answer("Нет активной сказки. Нажми ▶ Начать сказку.")
         await open_l1(message, state, user_id=tg_id)
         return
@@ -337,7 +413,7 @@ async def do_continue(message: Message, state: FSMContext, user_id: int | None =
         await open_l1(message, state, user_id=tg_id)
         return
 
-    await _continue_current(message, state, session, mode="menu")
+    await _continue_current(message, state, session, source="menu")
 
 
 @router.message(Command("resume"), StateFilter("*"))
@@ -351,9 +427,13 @@ async def on_resume(message: Message, state: FSMContext) -> None:
         await _handle_db_error(message, state)
         return
     if not session or not _is_session_valid(session):
+        logger.info(
+            "TG.6.4.10 continue source=resume_cmd outcome=no_active tg_id=%s",
+            message.from_user.id,
+        )
         await message.answer("Сессия устарела. Нажми /resume.")
         return
-    await _continue_current(message, state, session, mode="resume")
+    await _continue_current(message, state, session, source="resume_cmd")
 
 
 @router.message(Command("status"), StateFilter("*"))
@@ -802,6 +882,14 @@ async def on_go_continue(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer()
         return
     await do_continue(callback.message, state, user_id=callback.from_user.id)
+    try:
+        await callback.message.bot.edit_message_reply_markup(
+            chat_id=callback.message.chat.id,
+            message_id=callback.message.message_id,
+            reply_markup=None,
+        )
+    except Exception:
+        pass
     await callback.answer()
 
 

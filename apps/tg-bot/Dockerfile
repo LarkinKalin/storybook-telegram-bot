@@ -10,8 +10,9 @@ COPY apps/tg-bot/scripts/ /app/apps/tg-bot/scripts/
 COPY packages/db/src/ /app/packages/db/src/
 COPY packages/db/migrations/ /app/packages/db/migrations/
 COPY packages/engine/ /app/packages/engine/
+COPY packages/llm/ /app/packages/llm/
 
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app:/app/src:/app/packages/db/src
+ENV PYTHONPATH=/app:/app/src:/app/packages
 
 CMD ["python", "-m", "src.bot_app"]

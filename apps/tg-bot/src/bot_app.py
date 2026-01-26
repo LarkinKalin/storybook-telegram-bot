@@ -50,7 +50,6 @@ async def main() -> None:
     except Exception:
         logger.exception("Failed to apply DB migrations")
         raise
-    logger.info("db migrations applied")
     registry.load_all()
     whyqa.load()
 

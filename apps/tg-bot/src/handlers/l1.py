@@ -209,6 +209,8 @@ async def _handle_db_error(
     *,
     session_id: int | None = None,
     step: int | None = None,
+    step0: int | None = None,
+    req_id: str | None = None,
 ) -> None:
     logger.exception("DB operation failed")
     if session_id is not None or step is not None:
@@ -217,6 +219,8 @@ async def _handle_db_error(
             "db_unavailable",
             session_id=session_id,
             step=step,
+            step0=step0,
+            req_id=req_id,
         )
     await message.answer("⚠️ База данных временно недоступна. Попробуй позже.")
     await state.set_state(UX.l1)
@@ -262,16 +266,30 @@ def _log_l3_step(
     *,
     session_id: int | None,
     step: int | None,
+    step0: int | None,
+    req_id: str | None,
 ) -> None:
     session_value = session_id if session_id is not None else "unknown"
     step_value = step if step is not None else "unknown"
+    step0_value = step0 if step0 is not None else "unknown"
+    req_value = req_id if req_id is not None else "unknown"
     logger.info(
-        "event=l3_step outcome=%s reason=%s session_id=%s step=%s",
+        "event=l3_step outcome=%s reason=%s session_id=%s step=%s step0=%s req_id=%s",
         outcome,
         reason,
         session_value,
         step_value,
+        step0_value,
+        req_value,
     )
+
+
+def _req_id_from_update(message: Message | None, callback: CallbackQuery | None) -> str | None:
+    if callback and getattr(callback, "id", None):
+        return str(callback.id)
+    if message and getattr(message, "message_id", None):
+        return str(message.message_id)
+    return None
 
 
 async def _deliver_current_step(
@@ -536,6 +554,8 @@ async def on_inline_screen_text(message: Message, state: FSMContext) -> None:
             "text_not_expected",
             session_id=None,
             step=None,
+            step0=None,
+            req_id=_req_id_from_update(message, None),
         )
         await message.answer("Сейчас жми кнопки. Если потерялся, нажми ⬅ В меню.")
         return
@@ -641,6 +661,8 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             "invalid_payload",
             session_id=None,
             step=None,
+            step0=None,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Кнопка недействительна или устарела.")
         return
@@ -648,7 +670,14 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
     try:
         session = get_session_by_sid8(callback.from_user.id, sid8)
     except Exception:
-        await _handle_db_error(callback.message, state, session_id=None, step=st2)
+        await _handle_db_error(
+            callback.message,
+            state,
+            session_id=None,
+            step=st2,
+            step0=None,
+            req_id=_req_id_from_update(callback.message, callback),
+        )
         await callback.answer()
         return
     if not session or not _is_session_valid(session):
@@ -657,6 +686,8 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             "session_missing",
             session_id=getattr(session, "id", None),
             step=getattr(session, "step", None),
+            step0=getattr(session, "step", None),
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Сессия устарела. Нажми /resume.")
         return
@@ -666,6 +697,8 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             "message_id_mismatch",
             session_id=session.id,
             step=session.step,
+            step0=session.step,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
@@ -676,6 +709,8 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             "step_behind",
             session_id=session.id,
             step=session.step,
+            step0=session.step,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
@@ -686,6 +721,8 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             "step_ahead",
             session_id=session.id,
             step=session.step,
+            step0=session.step,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
@@ -705,9 +742,17 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             st2=st2,
             turn=turn,
             source_message_id=callback.message.message_id,
+            req_id=_req_id_from_update(callback.message, callback),
         )
     except Exception:
-        await _handle_db_error(callback.message, state, session_id=session.id, step=st2)
+        await _handle_db_error(
+            callback.message,
+            state,
+            session_id=session.id,
+            step=st2,
+            step0=st2,
+            req_id=_req_id_from_update(callback.message, callback),
+        )
         await callback.answer()
         return
     if result is None:
@@ -716,6 +761,8 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             "session_missing",
             session_id=None,
             step=st2,
+            step0=st2,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Сессия устарела. Нажми /resume.")
         return
@@ -725,6 +772,8 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             "invalid_turn",
             session_id=result.session_id or None,
             step=st2,
+            step0=st2,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Ход отклонён. Попробуй ещё раз.")
         return
@@ -734,6 +783,8 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             "tx_stale",
             session_id=result.session_id,
             step=result.step,
+            step0=result.step,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
@@ -744,6 +795,8 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             "duplicate_insert",
             session_id=result.session_id,
             step=st2,
+            step0=st2,
+            req_id=_req_id_from_update(callback.message, callback),
         )
     else:
         _log_l3_step(
@@ -751,6 +804,8 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             "applied",
             session_id=result.session_id,
             step=st2,
+            step0=st2,
+            req_id=_req_id_from_update(callback.message, callback),
         )
     locked_rows = _locked_rows_from_markup(callback.message.reply_markup)
     if not locked_rows:
@@ -810,6 +865,8 @@ async def on_locked_step(callback: CallbackQuery, state: FSMContext) -> None:
         "locked_button",
         session_id=session_id,
         step=step,
+        step0=step,
+        req_id=_req_id_from_update(callback.message, callback),
     )
     if callback.message and payload and session_id and callback.from_user:
         try:
@@ -833,6 +890,8 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             "invalid_payload",
             session_id=None,
             step=None,
+            step0=None,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Кнопка недействительна или устарела.")
         return
@@ -840,7 +899,14 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
     try:
         session = get_session_by_sid8(callback.from_user.id, sid8)
     except Exception:
-        await _handle_db_error(callback.message, state, session_id=None, step=st2)
+        await _handle_db_error(
+            callback.message,
+            state,
+            session_id=None,
+            step=st2,
+            step0=None,
+            req_id=_req_id_from_update(callback.message, callback),
+        )
         await callback.answer()
         return
     if not session or not _is_session_valid(session):
@@ -849,6 +915,8 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             "session_missing",
             session_id=getattr(session, "id", None),
             step=getattr(session, "step", None),
+            step0=getattr(session, "step", None),
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Сессия устарела. Нажми /resume.")
         return
@@ -858,6 +926,8 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             "message_id_mismatch",
             session_id=session.id,
             step=session.step,
+            step0=session.step,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
@@ -868,6 +938,8 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             "step_behind",
             session_id=session.id,
             step=session.step,
+            step0=session.step,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
@@ -878,6 +950,8 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             "step_ahead",
             session_id=session.id,
             step=session.step,
+            step0=session.step,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
@@ -888,6 +962,8 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             "step_check_failed",
             session_id=session.id,
             step=session.step,
+            step0=session.step,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
@@ -898,6 +974,8 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             "step_already_played",
             session_id=session.id,
             step=st2,
+            step0=st2,
+            req_id=_req_id_from_update(callback.message, callback),
         )
         await callback.answer("Этот шаг уже сыгран")
         await _deliver_current_step(callback.message, state, session)
@@ -924,12 +1002,21 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             "text_not_expected",
             session_id=None,
             step=None,
+            step0=None,
+            req_id=_req_id_from_update(message, None),
         )
         return
     try:
         session = get_session_by_sid8(message.from_user.id, sid8)
     except Exception:
-        await _handle_db_error(message, state, session_id=None, step=int(st2))
+        await _handle_db_error(
+            message,
+            state,
+            session_id=None,
+            step=int(st2),
+            step0=None,
+            req_id=_req_id_from_update(message, None),
+        )
         return
     if not session or not _is_session_valid(session):
         _log_l3_step(
@@ -937,6 +1024,8 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             "session_missing",
             session_id=getattr(session, "id", None),
             step=getattr(session, "step", None),
+            step0=getattr(session, "step", None),
+            req_id=_req_id_from_update(message, None),
         )
         await message.answer("Сессия устарела. Нажми /resume.")
         return
@@ -947,6 +1036,8 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
                 "step_mismatch",
                 session_id=session.id,
                 step=session.step,
+                step0=session.step,
+                req_id=_req_id_from_update(message, None),
             )
             await _clear_l3_free_text_state(state)
             await _deliver_current_step(message, state, session)
@@ -956,6 +1047,8 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             "step_mismatch",
             session_id=session.id,
             step=session.step,
+            step0=session.step,
+            req_id=_req_id_from_update(message, None),
         )
         await _clear_l3_free_text_state(state)
         await _deliver_current_step(message, state, session)
@@ -968,9 +1061,17 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             st2=int(st2),
             turn=turn,
             source_message_id=message.message_id,
+            req_id=_req_id_from_update(message, None),
         )
     except Exception:
-        await _handle_db_error(message, state, session_id=session.id, step=int(st2))
+        await _handle_db_error(
+            message,
+            state,
+            session_id=session.id,
+            step=int(st2),
+            step0=int(st2),
+            req_id=_req_id_from_update(message, None),
+        )
         return
     if result is None:
         _log_l3_step(
@@ -978,6 +1079,8 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             "session_missing",
             session_id=None,
             step=st2,
+            step0=st2,
+            req_id=_req_id_from_update(message, None),
         )
         await message.answer("Сессия устарела. Нажми /resume.")
         return
@@ -987,6 +1090,8 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             "invalid_turn",
             session_id=result.session_id or None,
             step=int(st2),
+            step0=int(st2),
+            req_id=_req_id_from_update(message, None),
         )
         await message.answer("Ход отклонён. Попробуй ещё раз.")
         await _clear_l3_free_text_state(state)
@@ -997,6 +1102,8 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             "tx_stale",
             session_id=result.session_id,
             step=result.step,
+            step0=result.step,
+            req_id=_req_id_from_update(message, None),
         )
         await _clear_l3_free_text_state(state)
         await _deliver_current_step(message, state, session)
@@ -1007,6 +1114,8 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             "duplicate_insert",
             session_id=result.session_id,
             step=int(st2),
+            step0=int(st2),
+            req_id=_req_id_from_update(message, None),
         )
     else:
         _log_l3_step(
@@ -1014,6 +1123,8 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             "applied",
             session_id=result.session_id,
             step=int(st2),
+            step0=int(st2),
+            req_id=_req_id_from_update(message, None),
         )
     if session.last_step_message_id:
         locked_rows = _locked_rows_from_content(session, int(st2))

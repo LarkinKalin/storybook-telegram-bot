@@ -11,6 +11,7 @@ from db.conn import to_json, transaction
 def append_event(
     session_id: int,
     step: int,
+    step0: int | None,
     user_input: str | None,
     choice_id: str | None,
     llm_json: dict[str, Any] | None,
@@ -27,6 +28,7 @@ def append_event(
                 INSERT INTO session_events (
                     session_id,
                     step,
+                    step0,
                     user_input,
                     choice_id,
                     llm_json,
@@ -35,13 +37,14 @@ def append_event(
                     step_result_json,
                     meta_json
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (session_id, step) DO NOTHING
                 RETURNING id;
                 """,
                 (
                     session_id,
                     step,
+                    step0,
                     user_input,
                     choice_id,
                     to_json(llm_json),
@@ -59,6 +62,7 @@ def insert_event(
     conn: Connection,
     session_id: int,
     step: int,
+    step0: int | None,
     user_input: str | None,
     choice_id: str | None,
     llm_json: dict[str, Any] | None,
@@ -74,6 +78,7 @@ def insert_event(
             INSERT INTO session_events (
                 session_id,
                 step,
+                step0,
                 user_input,
                 choice_id,
                 llm_json,
@@ -82,13 +87,14 @@ def insert_event(
                 step_result_json,
                 meta_json
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (session_id, step) DO NOTHING
             RETURNING id;
             """,
             (
                 session_id,
                 step,
+                step0,
                 user_input,
                 choice_id,
                 to_json(llm_json),

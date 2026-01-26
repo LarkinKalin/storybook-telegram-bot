@@ -67,6 +67,7 @@ def apply_l3_turn_atomic(
             conn,
             session_id=session_row["id"],
             step=step,
+            step0=step,
             user_input=user_input,
             choice_id=choice_id,
             llm_json=None,

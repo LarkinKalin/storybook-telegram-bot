@@ -46,6 +46,7 @@ def apply_l3_turn(
     st2: int,
     turn: Dict[str, Any],
     source_message_id: int,
+    req_id: str | None = None,
 ) -> L3TurnResult | None:
     kind = turn.get("kind")
     if kind not in {"choice", "free_text"}:
@@ -108,6 +109,7 @@ def apply_l3_turn(
         meta_json = {
             "turn_fingerprint": fingerprint,
             "source_message_id": source_message_id,
+            "req_id": req_id,
         }
         return l3_turns.L3ApplyPayload(
             new_state=new_state,

@@ -30,6 +30,7 @@ def main() -> int:
     status_first = session_events.append_event(
         session_id,
         step=1,
+        step0=1,
         user_input="hello",
         choice_id=None,
         llm_json={"narration": "test"},
@@ -38,6 +39,7 @@ def main() -> int:
     status_second = session_events.append_event(
         session_id,
         step=1,
+        step0=1,
         user_input="hello again",
         choice_id=None,
         llm_json={"narration": "test"},

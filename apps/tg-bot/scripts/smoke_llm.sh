@@ -39,7 +39,7 @@ modes=(
 
 for mode in "${modes[@]}"; do
   IFS=":" read -r provider mock_mode <<<"${mode}"
-  if [[ "${provider}" == "openrouter" && -z "${OPENROUTER_API_KEY:-}" ]]; then
+  if [[ "${provider}" == "openrouter" ]] && ! docker compose -f "${COMPOSE_FILE}" exec -T tg-bot sh -c 'test -n "$OPENROUTER_API_KEY" || test -n "$OPENAI_API_KEY"'; then
     echo "provider=openrouter expected=story_step attempt=0 outcome=skipped used_fallback=false reason=missing_key"
     echo "provider=openrouter expected=story_final attempt=0 outcome=skipped used_fallback=false reason=missing_key"
     continue
@@ -52,8 +52,8 @@ for mode in "${modes[@]}"; do
       continue
     fi
     exec_env+=(
-      -e "OPENROUTER_MAX_TOKENS_STEP=120"
-      -e "OPENROUTER_MAX_TOKENS_FINAL=160"
+      -e "OPENROUTER_MAX_TOKENS_STEP=200"
+      -e "OPENROUTER_MAX_TOKENS_FINAL=300"
     )
   fi
 

@@ -52,3 +52,4 @@ YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINA
 2026-01-26 | TG.6.5.01 | DONE | Atomic L3 + migrations runner + concurrency test
 2026-01-27 | TG.7.1.01 | DONE | LLM adapter v0.1 (mock-first) + L3 integration behind flag
 2026-01-28 | TG.7.2.01 | DONE | LLM mock matrix + contract validation tests + expected_type + choices.len UX
+2026-01-28 | TG.7.3.01 | DONE | OpenRouter(Kimi) text provider v0.1 wired (secrets out of repo) + smoke step/final

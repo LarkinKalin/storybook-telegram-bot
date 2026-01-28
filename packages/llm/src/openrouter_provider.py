@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import json
 import os
-import socket
 from typing import Any, Dict, List
-from urllib import error, request
+
+import requests
 
 
 class OpenRouterProvider:
-    def __init__(self) -> None:
-        api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    def __init__(self, api_key: str) -> None:
         if not api_key:
-            raise ValueError("OPENROUTER_API_KEY is required")
+            raise ValueError("OpenRouter API key is required")
         self._api_key = api_key
         self._endpoint = "https://openrouter.ai/api/v1/chat/completions"
         self._model = os.getenv("OPENROUTER_MODEL_TEXT", "moonshotai/kimi-k2.5").strip()
@@ -25,27 +24,36 @@ class OpenRouterProvider:
         payload = {
             "model": self._model,
             "messages": messages,
+            "response_format": {"type": "json_object"},
         }
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
-        req = request.Request(self._endpoint, data=data, headers=headers, method="POST")
+        http_referer = os.getenv("OPENROUTER_HTTP_REFERER", "").strip()
+        if http_referer:
+            headers["HTTP-Referer"] = http_referer
+        app_title = os.getenv("OPENROUTER_APP_TITLE", "").strip()
+        if app_title:
+            headers["X-Title"] = app_title
 
         try:
-            with request.urlopen(req, timeout=timeout_s) as response:
-                body = response.read().decode("utf-8")
-        except error.HTTPError:
-            raise
-        except error.URLError as exc:
-            if isinstance(exc.reason, (TimeoutError, socket.timeout)):
-                raise TimeoutError("openrouter timeout") from exc
+            response = requests.post(
+                self._endpoint,
+                headers=headers,
+                json=payload,
+                timeout=timeout_s,
+            )
+            response.raise_for_status()
+        except requests.exceptions.Timeout as exc:
+            raise TimeoutError("openrouter timeout") from exc
+        except requests.exceptions.HTTPError:
             raise
 
-        payload = json.loads(body)
+        payload = response.json()
         content = (
             payload.get("choices", [{}])[0]
             .get("message", {})

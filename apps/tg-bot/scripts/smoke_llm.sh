@@ -115,6 +115,7 @@ def run_expected(expected_type: str):
     try:
         result = adapter.generate(build_step_ctx(expected_type))
     except Exception as exc:  # noqa: BLE001
+        result = None
         outcome = "error"
         used_fallback = True
         attempt = 2
@@ -139,10 +140,31 @@ def run_expected(expected_type: str):
     if reason.startswith("provider_http_"):
         reason = "http_error_" + reason.removeprefix("provider_http_")
 
+    snippet = ""
+    if outcome == "error" and result and result.raw_text:
+        trimmed = result.raw_text.replace("\n", " ").strip()
+        snippet = trimmed[:300]
+    usage = ""
+    if provider_name == "openrouter" and result and isinstance(result.usage, dict):
+        prompt_tokens = result.usage.get("prompt_tokens")
+        completion_tokens = result.usage.get("completion_tokens")
+        total_tokens = result.usage.get("total_tokens")
+        parts = []
+        if prompt_tokens is not None:
+            parts.append(f"prompt={prompt_tokens}")
+        if completion_tokens is not None:
+            parts.append(f"completion={completion_tokens}")
+        if total_tokens is not None:
+            parts.append(f"total={total_tokens}")
+        if parts:
+            usage = "usage=" + ",".join(parts)
+
     print(
         f"provider={provider_name} expected={expected_type} "
         f"attempt={attempt} outcome={outcome} "
         f"used_fallback={str(used_fallback).lower()} reason={reason}"
+        + (f" {usage}" if usage else "")
+        + (f" snippet={snippet}" if snippet else "")
     )
 
 

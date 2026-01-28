@@ -34,6 +34,11 @@ class OpenRouterProvider:
         messages = self._resolve_messages(step_ctx)
         response_schema = self._build_response_schema(expected_type)
 
+        extra_body = {"response_healing": True}
+        reasoning = self._resolve_reasoning()
+        if reasoning is not None:
+            extra_body["reasoning"] = reasoning
+
         payload = {
             "model": self._resolve_model(expected_type),
             "messages": messages,
@@ -43,7 +48,7 @@ class OpenRouterProvider:
                 "strict": True,
             },
             "temperature": 0.2,
-            "extra_body": {"response_healing": True},
+            "extra_body": extra_body,
         }
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
@@ -73,6 +78,7 @@ class OpenRouterProvider:
             raise
 
         payload = response.json()
+        self.last_usage = payload.get("usage")
         content = (
             payload.get("choices", [{}])[0]
             .get("message", {})
@@ -98,10 +104,16 @@ class OpenRouterProvider:
             user_content: str = json.dumps(story_request, ensure_ascii=False)
         else:
             user_content = "" if story_request is None else str(story_request)
+        system_prompt = "Верни только JSON. Без markdown. Без пояснений."
+        if step_ctx.get("expected_type") == "story_final":
+            system_prompt = (
+                "Верни только JSON. Без markdown. Без пояснений. "
+                "Финал должен быть кратким (1-3 предложения)."
+            )
         return [
             {
                 "role": "system",
-                "content": "Верни только JSON. Без markdown. Без пояснений.",
+                "content": system_prompt,
             },
             {"role": "user", "content": user_content},
         ]
@@ -112,6 +124,10 @@ class OpenRouterProvider:
         else:
             raw = os.getenv("OPENROUTER_MAX_TOKENS_FINAL", "")
         raw = raw.strip()
+        if not raw:
+            raw = os.getenv("OPENROUTER_MAX_TOKENS_OUTPUT", "").strip()
+        if not raw and expected_type == "story_final":
+            raw = "3500"
         if not raw:
             return None
         try:
@@ -166,9 +182,23 @@ class OpenRouterProvider:
                 "type": "object",
                 "properties": {
                     "text": {"type": "string"},
+                    "image_prompt": {"type": "string"},
+                    "choices": {
+                        "type": "array",
+                        "maxItems": 0,
+                        "items": {"type": "object"},
+                    },
                     "memory": {"type": ["object", "null"]},
                 },
                 "required": ["text"],
                 "additionalProperties": False,
             },
         }
+
+    def _resolve_reasoning(self) -> Dict[str, Any] | None:
+        mode = os.getenv("OPENROUTER_REASONING", "off").strip().lower()
+        if not mode or mode == "off":
+            return None
+        if mode in {"low", "medium", "high"}:
+            return {"enabled": True, "effort": mode}
+        return {"enabled": True}

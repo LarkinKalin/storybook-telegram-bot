@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 from urllib import error as url_error
@@ -21,6 +23,7 @@ class LLMResult:
     expected_type: str
     raw_text: str
     parsed_json: Optional[Dict[str, Any]]
+    usage: Optional[Dict[str, Any]]
     used_fallback: bool
     skipped: bool
     error_class: Optional[str]
@@ -70,6 +73,7 @@ def generate(step_ctx: Dict[str, Any]) -> LLMResult:
             expected_type=expected_type,
             raw_text="",
             parsed_json=None,
+            usage=None,
             used_fallback=False,
             skipped=True,
             error_class=None,
@@ -99,6 +103,7 @@ def generate(step_ctx: Dict[str, Any]) -> LLMResult:
                 expected_type=expected_type,
                 raw_text="",
                 parsed_json=None,
+                usage=None,
                 used_fallback=False,
                 skipped=True,
                 error_class=None,
@@ -115,6 +120,7 @@ def generate(step_ctx: Dict[str, Any]) -> LLMResult:
         expected_type=expected_type,
         raw_text="",
         parsed_json=None,
+        usage=None,
         used_fallback=False,
         skipped=True,
         error_class=None,
@@ -132,11 +138,13 @@ def _generate_with_provider(
     last_error_class: Optional[str] = None
     last_error_reason: Optional[str] = None
     last_raw_text = ""
+    last_usage: Dict[str, Any] | None = None
 
     attempt = 1
     while True:
         try:
             last_raw_text = provider.generate(step_ctx)
+            last_usage = getattr(provider, "last_usage", None)
         except Exception as exc:  # noqa: BLE001
             last_error_class = type(exc).__name__
             if isinstance(exc, TimeoutError):
@@ -192,12 +200,21 @@ def _generate_with_provider(
             expected_type=expected_type,
             raw_text=last_raw_text,
             parsed_json=parsed_json,
+            usage=last_usage,
             used_fallback=False,
             skipped=False,
             error_class=None,
             error_reason=None,
         )
 
+    _dump_debug(
+        step_ctx=step_ctx,
+        provider_name=provider_name,
+        expected_type=expected_type,
+        raw_text=last_raw_text,
+        usage=last_usage,
+        error_reason=last_error_reason,
+    )
     fallback_json = build_fallback(expected_type)
     reason = last_error_reason or "unknown"
     logger.info(
@@ -209,8 +226,41 @@ def _generate_with_provider(
         expected_type=expected_type,
         raw_text=last_raw_text,
         parsed_json=fallback_json,
+        usage=last_usage,
         used_fallback=True,
         skipped=False,
         error_class=last_error_class,
         error_reason=last_error_reason,
     )
+
+
+def _dump_debug(
+    *,
+    step_ctx: Dict[str, Any],
+    provider_name: str,
+    expected_type: str,
+    raw_text: str,
+    usage: Dict[str, Any] | None,
+    error_reason: str | None,
+) -> None:
+    dump_dir = os.getenv("LLM_DEBUG_DUMP_DIR", "").strip()
+    if not dump_dir:
+        return
+    try:
+        os.makedirs(dump_dir, exist_ok=True)
+        req_id = step_ctx.get("req_id") or "unknown"
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        filename = f"{req_id}_{provider_name}_{expected_type}_{timestamp}.json"
+        path = os.path.join(dump_dir, filename)
+        payload = {
+            "req_id": req_id,
+            "provider": provider_name,
+            "expected_type": expected_type,
+            "error_reason": error_reason,
+            "raw_text": raw_text,
+            "usage": usage,
+        }
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+    except OSError:
+        return

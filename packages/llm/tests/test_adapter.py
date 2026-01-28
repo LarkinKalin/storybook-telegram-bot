@@ -11,6 +11,7 @@ def test_generate_ok(monkeypatch):
     assert result.parsed_json is not None
     assert result.parsed_json["text"]
     assert len(result.parsed_json["choices"]) == 3
+    assert result.usage is None
 
 
 def test_invalid_json_retry_fallback(monkeypatch):
@@ -20,7 +21,8 @@ def test_invalid_json_retry_fallback(monkeypatch):
     assert result.used_fallback is True
     assert result.skipped is False
     assert result.parsed_json is not None
-    assert result.error_reason == "invalid_json"
+    assert result.error_reason == "json_parse_error"
+    assert result.usage is None
 
 
 def test_timeout_retry_fallback(monkeypatch):

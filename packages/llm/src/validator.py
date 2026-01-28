@@ -8,9 +8,11 @@ def validate_response(raw_text: str, expected_type: str) -> Tuple[Dict[str, Any]
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError:
-        return None, "invalid_json"
+        if _looks_truncated(raw_text):
+            return None, "truncated_output"
+        return None, "json_parse_error"
     if not isinstance(parsed, dict):
-        return None, "invalid_json"
+        return None, "json_parse_error"
 
     if expected_type == "story_step":
         ok, reason = _validate_story_step(parsed)
@@ -28,9 +30,9 @@ def validate_response(raw_text: str, expected_type: str) -> Tuple[Dict[str, Any]
 def _validate_story_step(parsed: Dict[str, Any]) -> Tuple[bool, str]:
     text = parsed.get("text")
     if not isinstance(text, str) or not text.strip():
-        return False, "schema_invalid"
+        return False, "missing_required_fields"
     if "choices" not in parsed:
-        return False, "type_mismatch"
+        return False, "missing_required_fields"
     choices = parsed.get("choices")
     if not isinstance(choices, list):
         return False, "schema_invalid"
@@ -49,6 +51,9 @@ def _validate_story_step(parsed: Dict[str, Any]) -> Tuple[bool, str]:
 def _validate_story_final(parsed: Dict[str, Any]) -> Tuple[bool, str]:
     text = parsed.get("text")
     if not isinstance(text, str) or not text.strip():
+        return False, "missing_required_fields"
+    image_prompt = parsed.get("image_prompt")
+    if image_prompt is not None and not isinstance(image_prompt, str):
         return False, "schema_invalid"
     if "choices" in parsed:
         choices = parsed.get("choices")
@@ -56,5 +61,16 @@ def _validate_story_final(parsed: Dict[str, Any]) -> Tuple[bool, str]:
             return True, ""
         if not isinstance(choices, list):
             return False, "schema_invalid"
-        return False, "type_mismatch"
+        if len(choices) == 0:
+            return True, ""
+        return False, "schema_invalid"
     return True, ""
+
+
+def _looks_truncated(raw_text: str) -> bool:
+    stripped = raw_text.strip()
+    if not stripped:
+        return False
+    if stripped[0] not in {"{", "["}:
+        return False
+    return stripped[-1] not in {"}", "]"}

@@ -13,38 +13,19 @@ fi
 docker compose -f "${COMPOSE_FILE}" up -d tg-bot >/dev/null 2>&1
 
 modes=(
-  "off:"
+  "off:ok"
   "mock:invalid_json_always"
-  "openrouter:"
+  "openrouter:ok"
 )
 
 for mode in "${modes[@]}"; do
   IFS=":" read -r provider mock_mode <<<"${mode}"
-  exec_env=(-e "LLM_PROVIDER=${provider}")
-  if [[ -n "${mock_mode}" ]]; then
-    exec_env+=(-e "LLM_MOCK_MODE=${mock_mode}")
-  fi
+  exec_env=(-e "LLM_PROVIDER=${provider}" -e "LLM_MOCK_MODE=${mock_mode}")
 
   docker compose -f "${COMPOSE_FILE}" exec -T "${exec_env[@]}" tg-bot python - <<'PY'
-import logging
 import os
-import re
 
 from packages.llm.src import adapter
-
-
-class AttemptTracker(logging.Handler):
-    def __init__(self) -> None:
-        super().__init__()
-        self.max_attempt = 0
-
-    def emit(self, record: logging.LogRecord) -> None:
-        message = record.getMessage()
-        if "llm.adapter" not in message:
-            return
-        match = re.search(r"attempt=(\\d+)", message)
-        if match:
-            self.max_attempt = max(self.max_attempt, int(match.group(1)))
 
 
 def build_step_ctx(expected_type: str):
@@ -90,30 +71,35 @@ def format_outcome(raw_text: str):
 
 
 def run_expected(expected_type: str):
-    tracker = AttemptTracker()
-    tracker.setLevel(logging.INFO)
-    root_logger = logging.getLogger()
-    root_logger.handlers = []
-    root_logger.addHandler(tracker)
-    root_logger.setLevel(logging.INFO)
-
     provider_name = os.getenv("LLM_PROVIDER", "off").strip().lower()
-    result = adapter.generate(build_step_ctx(expected_type))
-    attempt = tracker.max_attempt
-    if provider_name == "off":
-        outcome = "skipped"
-        reason = "skipped"
-        attempt = 0
-    elif result.used_fallback:
+    try:
+        result = adapter.generate(build_step_ctx(expected_type))
+    except Exception as exc:  # noqa: BLE001
         outcome = "error"
-        reason = result.error_reason or "unknown"
+        used_fallback = True
+        attempt = 2
+        reason = f"exception_{type(exc).__name__.lower()}"
     else:
-        outcome = format_outcome(result.raw_text)
-        reason = result.error_reason or "none"
+        if provider_name == "off":
+            outcome = "skipped"
+            used_fallback = False
+            reason = "skipped"
+            attempt = 0
+        elif result.used_fallback:
+            outcome = "error"
+            used_fallback = True
+            reason = result.error_reason or "unknown"
+            attempt = 2
+        else:
+            outcome = format_outcome(result.raw_text)
+            used_fallback = False
+            reason = result.error_reason or "none"
+            attempt = 1
+
     print(
         f"provider={provider_name} expected={expected_type} "
         f"attempt={attempt} outcome={outcome} "
-        f"used_fallback={str(result.used_fallback).lower()} reason={reason}"
+        f"used_fallback={str(used_fallback).lower()} reason={reason}"
     )
 
 

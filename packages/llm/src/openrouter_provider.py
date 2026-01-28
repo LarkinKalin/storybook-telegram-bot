@@ -18,6 +18,7 @@ class OpenRouterProvider:
         self._api_key = api_key
         self._endpoint = "https://openrouter.ai/api/v1/chat/completions"
         self._model = os.getenv("OPENROUTER_MODEL_TEXT", "moonshotai/kimi-k2.5").strip()
+        self._model_final = os.getenv("OPENROUTER_MODEL_FINAL", "").strip()
 
     @classmethod
     def from_env(cls) -> "OpenRouterProvider":
@@ -31,11 +32,18 @@ class OpenRouterProvider:
         max_tokens = self._resolve_max_tokens(expected_type)
         timeout_s = self._resolve_timeout()
         messages = self._resolve_messages(step_ctx)
+        response_schema = self._build_response_schema(expected_type)
 
         payload = {
-            "model": self._model,
+            "model": self._resolve_model(expected_type),
             "messages": messages,
-            "response_format": {"type": "json_object"},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": response_schema,
+                "strict": True,
+            },
+            "temperature": 0.2,
+            "extra_body": {"response_healing": True},
         }
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
@@ -70,9 +78,15 @@ class OpenRouterProvider:
             .get("message", {})
             .get("content")
         )
-        if not isinstance(content, str):
-            raise ValueError("openrouter response missing content")
-        return content
+        if isinstance(content, dict):
+            return json.dumps(content, ensure_ascii=False)
+        if isinstance(content, str):
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError:
+                return content
+            return json.dumps(parsed, ensure_ascii=False)
+        raise ValueError("openrouter response missing content")
 
     def _resolve_messages(self, step_ctx: Dict[str, Any]) -> List[Dict[str, str]]:
         messages = step_ctx.get("messages")
@@ -113,3 +127,48 @@ class OpenRouterProvider:
             return float(raw)
         except ValueError:
             return 30.0
+
+    def _resolve_model(self, expected_type: Any) -> str:
+        if expected_type == "story_final" and self._model_final:
+            return self._model_final
+        return self._model
+
+    def _build_response_schema(self, expected_type: Any) -> Dict[str, Any]:
+        if expected_type == "story_step":
+            return {
+                "name": "story_step",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "choices": {
+                            "type": "array",
+                            "maxItems": 3,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "choice_id": {"type": "string"},
+                                    "label": {"type": "string"},
+                                },
+                                "required": ["choice_id", "label"],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "memory": {"type": ["object", "null"]},
+                    },
+                    "required": ["text", "choices"],
+                    "additionalProperties": False,
+                },
+            }
+        return {
+            "name": "story_final",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "memory": {"type": ["object", "null"]},
+                },
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+        }

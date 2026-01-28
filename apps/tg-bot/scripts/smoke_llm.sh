@@ -133,8 +133,11 @@ def run_expected(expected_type: str):
         else:
             outcome = format_outcome(result.raw_text)
             used_fallback = False
-            reason = result.error_reason or "none"
+            reason = "ok"
             attempt = 1
+
+    if reason.startswith("provider_http_"):
+        reason = "http_error_" + reason.removeprefix("provider_http_")
 
     print(
         f"provider={provider_name} expected={expected_type} "

@@ -35,6 +35,12 @@ def build_final_step_result(
         "req_id": req_id,
         "final_id": final_id,
         "theme_id": theme_id,
+        "story_request": {
+            "expected_type": "story_final",
+            "final_id": final_id,
+            "theme_id": theme_id,
+            "format": "Верни JSON формата {text}.",
+        },
     }
     llm_result = llm_generate(step_ctx)
     if llm_result.parsed_json:
@@ -102,6 +108,19 @@ def build_step_result(
         "step": state.get("step0"),
         "total_steps": state.get("n"),
         "allow_free_text": state.get("free_text_allowed_after"),
+        "story_request": {
+            "expected_type": expected_type_for_step(state["step0"], state["n"]),
+            "scene_text": content["scene_text"],
+            "choices": [
+                {"choice_id": choice["choice_id"], "label": choice["label"]}
+                for choice in choices
+            ],
+            "allow_free_text": state.get("free_text_allowed_after"),
+            "step": state.get("step0"),
+            "total_steps": state.get("n"),
+            "theme_id": session_row.get("theme_id"),
+            "format": "Верни JSON формата {text, choices[]}.",
+        },
     }
     llm_result = llm_generate(step_ctx)
     if llm_result.parsed_json:

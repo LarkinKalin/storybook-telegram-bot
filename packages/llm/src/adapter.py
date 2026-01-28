@@ -4,9 +4,11 @@ import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
+from urllib import error as url_error
 
 from packages.llm.src.fallbacks import build_fallback
 from packages.llm.src.mock_provider import MockProvider
+from packages.llm.src.openrouter_provider import OpenRouterProvider
 from packages.llm.src.validator import validate_response
 
 logger = logging.getLogger(__name__)
@@ -27,7 +29,7 @@ def _normalize_provider() -> str:
     raw = os.getenv("LLM_PROVIDER", "off").strip().lower()
     if not raw:
         raw = "off"
-    if raw not in {"off", "mock"}:
+    if raw not in {"off", "mock", "openrouter"}:
         logger.warning("llm.adapter unknown provider=%s fallback=off", raw)
         return "off"
     return raw
@@ -72,20 +74,39 @@ def generate(step_ctx: Dict[str, Any]) -> LLMResult:
             error_reason=None,
         )
 
-    mock_mode = _normalize_mock_mode()
-    mock_provider = MockProvider(mode=mock_mode)
-    return _generate_with_provider(
-        provider_name="mock",
-        provider=mock_provider,
+    if provider == "mock":
+        mock_mode = _normalize_mock_mode()
+        mock_provider = MockProvider(mode=mock_mode)
+        return _generate_with_provider(
+            provider_name="mock",
+            provider=mock_provider,
+            expected_type=expected_type,
+            step_ctx=step_ctx,
+        )
+    if provider == "openrouter":
+        openrouter_provider = OpenRouterProvider()
+        return _generate_with_provider(
+            provider_name="openrouter",
+            provider=openrouter_provider,
+            expected_type=expected_type,
+            step_ctx=step_ctx,
+        )
+    logger.warning("llm.adapter unknown provider=%s fallback=off", provider)
+    return LLMResult(
         expected_type=expected_type,
-        step_ctx=step_ctx,
+        raw_text="",
+        parsed_json=None,
+        used_fallback=False,
+        skipped=True,
+        error_class=None,
+        error_reason=None,
     )
 
 
 def _generate_with_provider(
     *,
     provider_name: str,
-    provider: MockProvider,
+    provider: Any,
     expected_type: str,
     step_ctx: Dict[str, Any],
 ) -> LLMResult:
@@ -99,7 +120,12 @@ def _generate_with_provider(
             last_raw_text = provider.generate(step_ctx)
         except Exception as exc:  # noqa: BLE001
             last_error_class = type(exc).__name__
-            last_error_reason = "timeout" if isinstance(exc, TimeoutError) else "exception"
+            if isinstance(exc, TimeoutError):
+                last_error_reason = "timeout"
+            elif isinstance(exc, url_error.HTTPError):
+                last_error_reason = f"provider_http_{exc.code}"
+            else:
+                last_error_reason = "exception"
             logger.info(
                 "llm.adapter provider=%s expected=%s attempt=%s outcome=error",
                 provider_name,

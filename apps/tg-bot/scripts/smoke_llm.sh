@@ -39,25 +39,30 @@ modes=(
 
 for mode in "${modes[@]}"; do
   IFS=":" read -r provider mock_mode <<<"${mode}"
-  if [[ "${provider}" == "openrouter" ]] && ! docker compose -f "${COMPOSE_FILE}" exec -T tg-bot sh -c 'test -n "$OPENROUTER_API_KEY" || test -n "$OPENAI_API_KEY"'; then
+  if [[ "${provider}" == "openrouter" && "${SMOKE_LIVE_OPENROUTER:-}" != "1" ]]; then
+    echo "provider=openrouter expected=story_step attempt=0 outcome=skipped used_fallback=false reason=disabled"
+    echo "provider=openrouter expected=story_final attempt=0 outcome=skipped used_fallback=false reason=disabled"
+    continue
+  fi
+  if [[ "${provider}" == "openrouter" ]] && ! docker compose -f "${COMPOSE_FILE}" run --rm --no-deps -T tg-bot sh -c 'test -n "$OPENROUTER_API_KEY" || test -n "$OPENAI_API_KEY"'; then
     echo "provider=openrouter expected=story_step attempt=0 outcome=skipped used_fallback=false reason=missing_key"
     echo "provider=openrouter expected=story_final attempt=0 outcome=skipped used_fallback=false reason=missing_key"
     continue
   fi
   exec_env=(-e "LLM_PROVIDER=${provider}" -e "LLM_MOCK_MODE=${mock_mode}")
   if [[ "${provider}" == "openrouter" ]]; then
-    if ! docker compose -f "${COMPOSE_FILE}" exec -T tg-bot python -c "import requests" >/dev/null 2>&1; then
+    if ! docker compose -f "${COMPOSE_FILE}" run --rm --no-deps -T tg-bot python -c "import requests" >/dev/null 2>&1; then
       echo "provider=openrouter expected=story_step attempt=0 outcome=skipped used_fallback=false reason=missing_dep_requests"
       echo "provider=openrouter expected=story_final attempt=0 outcome=skipped used_fallback=false reason=missing_dep_requests"
       continue
     fi
     exec_env+=(
-      -e "OPENROUTER_MAX_TOKENS_STEP=200"
-      -e "OPENROUTER_MAX_TOKENS_FINAL=300"
+      -e "OPENROUTER_MAX_TOKENS_STEP=64"
+      -e "OPENROUTER_MAX_TOKENS_FINAL=64"
     )
   fi
 
-  docker compose -f "${COMPOSE_FILE}" exec -T "${exec_env[@]}" tg-bot python - <<'PY'
+  docker compose -f "${COMPOSE_FILE}" run --rm --no-deps -T "${exec_env[@]}" tg-bot python - <<'PY'
 import os
 
 from packages.llm.src import adapter

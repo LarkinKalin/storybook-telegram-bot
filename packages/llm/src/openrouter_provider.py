@@ -7,13 +7,24 @@ from typing import Any, Dict, List
 import requests
 
 
+class MissingOpenRouterKeyError(ValueError):
+    pass
+
+
 class OpenRouterProvider:
     def __init__(self, api_key: str) -> None:
         if not api_key:
-            raise ValueError("OpenRouter API key is required")
+            raise MissingOpenRouterKeyError("OpenRouter API key is required")
         self._api_key = api_key
         self._endpoint = "https://openrouter.ai/api/v1/chat/completions"
         self._model = os.getenv("OPENROUTER_MODEL_TEXT", "moonshotai/kimi-k2.5").strip()
+
+    @classmethod
+    def from_env(cls) -> "OpenRouterProvider":
+        api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        if not api_key:
+            api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        return cls(api_key)
 
     def generate(self, step_ctx: Dict[str, Any]) -> str:
         expected_type = step_ctx.get("expected_type")

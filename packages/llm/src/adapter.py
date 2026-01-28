@@ -6,10 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 from urllib import error as url_error
 
-try:
-    import requests
-except ModuleNotFoundError:  # pragma: no cover - optional dependency
-    requests = None
+import requests
 
 from packages.llm.src.fallbacks import build_fallback
 from packages.llm.src.mock_provider import MockProvider
@@ -89,8 +86,14 @@ def generate(step_ctx: Dict[str, Any]) -> LLMResult:
             step_ctx=step_ctx,
         )
     if provider == "openrouter":
-        api_key = _resolve_openrouter_api_key()
-        if not api_key:
+        from packages.llm.src.openrouter_provider import (
+            MissingOpenRouterKeyError,
+            OpenRouterProvider,
+        )
+
+        try:
+            openrouter_provider = OpenRouterProvider.from_env()
+        except MissingOpenRouterKeyError:
             logger.info("llm.adapter provider=openrouter skipped=true reason=missing_key")
             return LLMResult(
                 expected_type=expected_type,
@@ -101,9 +104,6 @@ def generate(step_ctx: Dict[str, Any]) -> LLMResult:
                 error_class=None,
                 error_reason="missing_key",
             )
-        from packages.llm.src.openrouter_provider import OpenRouterProvider
-
-        openrouter_provider = OpenRouterProvider(api_key)
         return _generate_with_provider(
             provider_name="openrouter",
             provider=openrouter_provider,
@@ -120,13 +120,6 @@ def generate(step_ctx: Dict[str, Any]) -> LLMResult:
         error_class=None,
         error_reason=None,
     )
-
-
-def _resolve_openrouter_api_key() -> str:
-    primary = os.getenv("OPENROUTER_API_KEY", "").strip()
-    if primary:
-        return primary
-    return os.getenv("OPENAI_API_KEY", "").strip()
 
 
 def _generate_with_provider(
@@ -150,7 +143,7 @@ def _generate_with_provider(
                 last_error_reason = "timeout"
             elif isinstance(exc, url_error.HTTPError):
                 last_error_reason = f"provider_http_{exc.code}"
-            elif requests is not None and isinstance(exc, requests.exceptions.HTTPError):
+            elif isinstance(exc, requests.exceptions.HTTPError):
                 status_code = getattr(exc.response, "status_code", None)
                 if status_code is None:
                     last_error_reason = "provider_http_unknown"

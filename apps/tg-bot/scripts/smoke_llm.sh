@@ -10,42 +10,50 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
+docker compose -f "${COMPOSE_FILE}" up -d tg-bot >/dev/null 2>&1
+
 modes=(
-  "off:ok"
+  "off:"
   "mock:invalid_json_always"
-  "openrouter:ok"
+  "openrouter:"
 )
 
 for mode in "${modes[@]}"; do
   IFS=":" read -r provider mock_mode <<<"${mode}"
-  LLM_PROVIDER="${provider}" LLM_MOCK_MODE="${mock_mode}" \
-    docker compose -f "${COMPOSE_FILE}" up -d --build tg-bot >/dev/null 2>&1
+  exec_env=(-e "LLM_PROVIDER=${provider}")
+  if [[ -n "${mock_mode}" ]]; then
+    exec_env+=(-e "LLM_MOCK_MODE=${mock_mode}")
+  fi
 
-  docker compose -f "${COMPOSE_FILE}" exec -T tg-bot python - <<'PY'
-import json
+  docker compose -f "${COMPOSE_FILE}" exec -T "${exec_env[@]}" tg-bot python - <<'PY'
 import logging
 import os
+import re
 
 from packages.llm.src import adapter
-from packages.llm.src.mock_provider import MockProvider
-from packages.llm.src.openrouter_provider import OpenRouterProvider
 
 
-class CountingProvider:
-    def __init__(self, provider):
-        self.provider = provider
-        self.attempts = 0
+class AttemptTracker(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.max_attempt = 0
 
-    def generate(self, step_ctx):
-        self.attempts += 1
-        return self.provider.generate(step_ctx)
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage()
+        if "llm.adapter" not in message:
+            return
+        match = re.search(r"attempt=(\\d+)", message)
+        if match:
+            self.max_attempt = max(self.max_attempt, int(match.group(1)))
 
 
-def build_step_ctx(expected_type):
+def build_step_ctx(expected_type: str):
     if expected_type == "story_step":
         return {
             "expected_type": expected_type,
+            "req_id": "smoke-step",
             "story_request": {
+                "rules": "Верни только JSON. Без markdown. Без пояснений.",
                 "expected_type": expected_type,
                 "scene_text": "Герой стоит у развилки дорог.",
                 "choices": [
@@ -61,7 +69,9 @@ def build_step_ctx(expected_type):
         }
     return {
         "expected_type": expected_type,
+        "req_id": "smoke-final",
         "story_request": {
+            "rules": "Верни только JSON. Без markdown. Без пояснений.",
             "expected_type": expected_type,
             "final_id": "smoke",
             "theme_id": "smoke",
@@ -70,7 +80,7 @@ def build_step_ctx(expected_type):
     }
 
 
-def format_outcome(raw_text):
+def format_outcome(raw_text: str):
     if not raw_text:
         return "ok"
     snippet = raw_text.replace("\n", " ").strip()
@@ -79,51 +89,33 @@ def format_outcome(raw_text):
     return f"ok({snippet})"
 
 
-def run_expected(expected_type):
+def run_expected(expected_type: str):
+    tracker = AttemptTracker()
+    tracker.setLevel(logging.INFO)
+    root_logger = logging.getLogger()
+    root_logger.handlers = []
+    root_logger.addHandler(tracker)
+    root_logger.setLevel(logging.INFO)
+
     provider_name = os.getenv("LLM_PROVIDER", "off").strip().lower()
+    result = adapter.generate(build_step_ctx(expected_type))
+    attempt = tracker.max_attempt
     if provider_name == "off":
-        result = adapter.generate(build_step_ctx(expected_type))
-        print(
-            f"provider={provider_name} expected={expected_type} attempt=0 "
-            f"outcome=skipped used_fallback={str(result.used_fallback).lower()}"
-        )
-        return
-
-    if provider_name == "mock":
-        mock_mode = os.getenv("LLM_MOCK_MODE", "ok")
-        provider = MockProvider(mode=mock_mode)
-    elif provider_name == "openrouter":
-        try:
-            provider = OpenRouterProvider()
-        except Exception:
-            print(
-                f"provider={provider_name} expected={expected_type} attempt=0 "
-                "outcome=error used_fallback=false"
-            )
-            return
+        outcome = "skipped"
+        reason = "skipped"
+        attempt = 0
+    elif result.used_fallback:
+        outcome = "error"
+        reason = result.error_reason or "unknown"
     else:
-        print(
-            f"provider={provider_name} expected={expected_type} attempt=0 "
-            "outcome=unknown used_fallback=false"
-        )
-        return
-
-    counting_provider = CountingProvider(provider)
-    result = adapter._generate_with_provider(
-        provider_name=provider_name,
-        provider=counting_provider,
-        expected_type=expected_type,
-        step_ctx=build_step_ctx(expected_type),
-    )
-    outcome = "error" if result.used_fallback else format_outcome(result.raw_text)
+        outcome = format_outcome(result.raw_text)
+        reason = result.error_reason or "none"
     print(
         f"provider={provider_name} expected={expected_type} "
-        f"attempt={counting_provider.attempts} outcome={outcome} "
-        f"used_fallback={str(result.used_fallback).lower()}"
+        f"attempt={attempt} outcome={outcome} "
+        f"used_fallback={str(result.used_fallback).lower()} reason={reason}"
     )
 
-
-logging.basicConfig(level=logging.ERROR)
 
 run_expected("story_step")
 run_expected("story_final")

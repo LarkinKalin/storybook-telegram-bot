@@ -84,6 +84,8 @@ def generate(step_ctx: Dict[str, Any]) -> LLMResult:
             step_ctx=step_ctx,
         )
     if provider == "openrouter":
+        from packages.llm.src.openrouter_provider import OpenRouterProvider
+
         openrouter_provider = OpenRouterProvider()
         return _generate_with_provider(
             provider_name="openrouter",

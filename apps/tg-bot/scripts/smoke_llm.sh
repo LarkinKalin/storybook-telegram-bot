@@ -11,6 +11,25 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 docker compose -f "${COMPOSE_FILE}" up -d tg-bot >/dev/null 2>&1
+if ! docker compose -f "${COMPOSE_FILE}" ps -q tg-bot >/dev/null; then
+  echo "tg-bot container is not available" >&2
+  exit 1
+fi
+
+wait_seconds=30
+container_status=""
+for _ in $(seq 1 "${wait_seconds}"); do
+  container_status="$(docker inspect -f '{{.State.Status}}' skazka-tg-bot 2>/dev/null || true)"
+  if [[ "${container_status}" == "running" ]]; then
+    break
+  fi
+  sleep 1
+done
+
+if [[ "${container_status}" != "running" ]]; then
+  echo "tg-bot container status=${container_status:-unknown} after ${wait_seconds}s" >&2
+  exit 1
+fi
 
 modes=(
   "off:ok"
@@ -20,6 +39,11 @@ modes=(
 
 for mode in "${modes[@]}"; do
   IFS=":" read -r provider mock_mode <<<"${mode}"
+  if [[ "${provider}" == "openrouter" && -z "${OPENROUTER_API_KEY:-}" ]]; then
+    echo "provider=openrouter expected=story_step attempt=0 outcome=skipped used_fallback=false reason=missing_key"
+    echo "provider=openrouter expected=story_final attempt=0 outcome=skipped used_fallback=false reason=missing_key"
+    continue
+  fi
   exec_env=(-e "LLM_PROVIDER=${provider}" -e "LLM_MOCK_MODE=${mock_mode}")
 
   docker compose -f "${COMPOSE_FILE}" exec -T "${exec_env[@]}" tg-bot python - <<'PY'

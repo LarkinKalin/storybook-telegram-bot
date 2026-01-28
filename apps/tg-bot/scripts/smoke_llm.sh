@@ -45,6 +45,17 @@ for mode in "${modes[@]}"; do
     continue
   fi
   exec_env=(-e "LLM_PROVIDER=${provider}" -e "LLM_MOCK_MODE=${mock_mode}")
+  if [[ "${provider}" == "openrouter" ]]; then
+    if ! docker compose -f "${COMPOSE_FILE}" exec -T tg-bot python -c "import requests" >/dev/null 2>&1; then
+      echo "provider=openrouter expected=story_step attempt=0 outcome=skipped used_fallback=false reason=missing_dep_requests"
+      echo "provider=openrouter expected=story_final attempt=0 outcome=skipped used_fallback=false reason=missing_dep_requests"
+      continue
+    fi
+    exec_env+=(
+      -e "OPENROUTER_MAX_TOKENS_STEP=120"
+      -e "OPENROUTER_MAX_TOKENS_FINAL=160"
+    )
+  fi
 
   docker compose -f "${COMPOSE_FILE}" exec -T "${exec_env[@]}" tg-bot python - <<'PY'
 import os

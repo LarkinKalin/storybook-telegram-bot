@@ -66,16 +66,27 @@ def test_session_images_unique_role_per_step() -> None:
         image_model="model",
         prompt="prompt",
     )
-    with pytest.raises(Exception):
-        session_images.insert_session_image(
-            session_id=session_row["id"],
-            step_ui=1,
-            asset_id=asset_id,
-            role="step_image",
-            reference_asset_id=None,
-            image_model="model",
-            prompt="prompt",
-        )
+    duplicate_id = session_images.insert_session_image(
+        session_id=session_row["id"],
+        step_ui=1,
+        asset_id=asset_id,
+        role="step_image",
+        reference_asset_id=None,
+        image_model="model",
+        prompt="prompt",
+    )
+    assert duplicate_id is None
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT count(*)
+                FROM session_images
+                WHERE session_id = %s AND step_ui = %s AND role = %s;
+                """,
+                (session_row["id"], 1, "step_image"),
+            )
+            assert cur.fetchone()[0] == 1
 
 
 def test_reference_only_step1_check() -> None:

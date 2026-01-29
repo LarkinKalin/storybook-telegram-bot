@@ -45,3 +45,19 @@ def insert_asset(
             )
             row = cur.fetchone()
             return int(row["id"])
+
+
+def get_by_id(asset_id: int) -> dict | None:
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM assets
+                WHERE id = %s
+                LIMIT 1;
+                """,
+                (asset_id,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None

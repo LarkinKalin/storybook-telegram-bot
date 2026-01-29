@@ -10,6 +10,7 @@ services:
       - SKAZKA_CONTENT_DIR=/app/content
     volumes:
       - ../../content:/app/content:ro
+      - /srv/git/skazka/var/assets:/app/var/assets
     restart: unless-stopped
     depends_on:
       - postgres

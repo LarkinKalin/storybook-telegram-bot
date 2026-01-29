@@ -15,7 +15,7 @@ def insert_session_image(
     reference_asset_id: int | None,
     image_model: str,
     prompt: str,
-) -> int:
+) -> int | None:
     with transaction() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -30,6 +30,7 @@ def insert_session_image(
                     prompt
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (session_id, step_ui, role) DO NOTHING
                 RETURNING id;
                 """,
                 (
@@ -43,7 +44,7 @@ def insert_session_image(
                 ),
             )
             row = cur.fetchone()
-            return int(row["id"])
+            return int(row["id"]) if row else None
 
 
 def list_session_images(session_id: int) -> list[dict[str, Any]]:
@@ -59,3 +60,22 @@ def list_session_images(session_id: int) -> list[dict[str, Any]]:
                 (session_id,),
             )
             return [dict(row) for row in cur.fetchall()]
+
+
+def get_reference_asset_id(session_id: int) -> int | None:
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT asset_id
+                FROM session_images
+                WHERE session_id = %s AND role = 'reference'
+                ORDER BY id
+                LIMIT 1;
+                """,
+                (session_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return int(row["asset_id"])

@@ -6,7 +6,6 @@ from contextlib import contextmanager
 from typing import Iterator
 
 from psycopg import Connection, OperationalError
-from psycopg.errors import DatabaseError
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
@@ -58,7 +57,7 @@ def transaction() -> Iterator[Connection]:
         with get_conn() as conn:
             with conn.transaction():
                 yield conn
-    except (OperationalError, DatabaseError) as exc:
+    except OperationalError as exc:
         logger.exception("DB transaction failed", exc_info=True)
         _reset_pool()
         raise DBUnavailable("DB transaction failed") from exc

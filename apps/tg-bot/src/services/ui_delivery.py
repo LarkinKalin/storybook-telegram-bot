@@ -11,6 +11,7 @@ from aiogram import Bot
 from aiogram.types import Message, ReplyKeyboardRemove
 
 from db.repos import sessions, ui_events
+from src.services.image_delivery import schedule_image_delivery
 from src.services.story_runtime import StepView
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ async def deliver_step_view(
     session_id: int,
     step: int,
     theme_id: str | None,
+    total_steps: int,
     kind: str = "recap_shown",
 ) -> bool:
     content_hash_value = content_hash(theme_id=theme_id, text=step_view.text)
@@ -107,6 +109,15 @@ async def deliver_step_view(
         sessions.update_last_step(session_id, step_message.message_id, int(time()))
     except Exception:
         return True
+    schedule_image_delivery(
+        bot=message.bot,
+        chat_id=step_message.chat.id,
+        step_message_id=step_message.message_id,
+        session_id=session_id,
+        step_ui=step + 1,
+        total_steps=total_steps,
+        prompt=step_view.text,
+    )
     logger.info("TG.6.4.07 delivery=sent msg_id=%s", step_message.message_id)
     return True
 

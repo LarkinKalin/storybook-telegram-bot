@@ -320,6 +320,7 @@ async def _deliver_current_step(
         session_id=session.id,
         step=session.step,
         theme_id=session.theme_id,
+        total_steps=session.max_steps,
     )
     await state.set_state(L3.STEP)
 
@@ -847,6 +848,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             session_id=result.session_id,
             step=result.step,
             theme_id=result.theme_id,
+            total_steps=session.max_steps,
         )
         await state.set_state(L3.STEP)
         await callback.answer("Ход уже принят. Сообщение устарело.")
@@ -859,6 +861,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         session_id=result.session_id,
         step=result.step,
         theme_id=result.theme_id,
+        total_steps=session.max_steps,
     )
     await state.set_state(L3.STEP)
     await _clear_l3_free_text_state(state)
@@ -1168,6 +1171,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             session_id=result.session_id,
             step=result.step,
             theme_id=result.theme_id,
+            total_steps=session.max_steps,
         )
         await _clear_l3_free_text_state(state)
         return
@@ -1178,6 +1182,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         session_id=result.session_id,
         step=result.step,
         theme_id=result.theme_id,
+        total_steps=session.max_steps,
     )
     await state.set_state(L3.STEP)
     await _clear_l3_free_text_state(state)

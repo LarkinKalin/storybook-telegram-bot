@@ -220,4 +220,25 @@ Runtime обязан ограничивать:
 }
 Далее этот пакет конвертируется в запрос OpenRouter под конкретный image spec.
 
+============================================================
+TG.7.4.01 — Image Provider v0.1 (FLUX.2 Pro) — UX/Delivery Rule
+============================================================
+
+1) Расписание иллюстраций (детерминированно)
+- 8 шагов: 1/4/8
+- 10 шагов: 1/4/8
+- 12 шагов: 1/5/9
+
+2) Reference-цепочка
+- step 1: t2i без reference → сохраняем как role=reference
+- step 4/8 (или 5/9): i2i с reference изображения step 1 → role=step_image, reference_asset_id=asset(step1)
+
+3) Delivery в Telegram (MVP)
+- Сообщение шага: текст + кнопки отправляются сразу.
+- Иллюстрация отправляется асинхронно отдельным сообщением (reply к сообщению шага).
+- Если генерация упала: retry=1, затем пропуск иллюстрации. Прохождение не блокируется.
+
+4) DB/Storage
+- base64 в Postgres не пишем
+- только assets(storage_key, sha256, bytes, mime, w/h) + session_images(step_ui, role, reference_asset_id, image_model, prompt)
 

@@ -280,3 +280,53 @@ confirm_requests.result: YES | NO | FAIL
 ui_events.state: PENDING | SHOWN | FAILED
 
 ui_events.kind: recap_shown (v0.1)
+---
+
+## DB v0.2 additions — TG.3.2.02 (assets + session_images)
+
+Принцип: бинарные данные (base64/bytes) в Postgres НЕ храним. В БД только метаданные и привязки.
+Физическое хранение: FS (storage_backend = 'fs'), ключ = assets.storage_key.
+
+### assets
+PK: bigint (IDENTITY)
+
+| field | type | null | example | notes |
+|---|---:|:---:|---|---|
+| id | bigint PK | no | 6001 | identity |
+| kind | text | no | image | CHECK: only 'image' (MVP) |
+| storage_backend | text | no | fs | CHECK: only 'fs' (MVP) |
+| storage_key | text | no | images/<sha>.png | путь/ключ в backend |
+| mime | text | no | image/png | |
+| bytes | bigint | no | 12345 | > 0 |
+| sha256 | text | no | <64 hex> | UNIQUE (ux_assets_sha256) |
+| width | int | yes | 512 | > 0 if not null |
+| height | int | yes | 768 | > 0 if not null |
+| created_at | timestamptz | no | now() | |
+
+Indexes:
+- UNIQUE(assets.sha256)
+
+### session_images
+PK: bigint (IDENTITY)
+
+| field | type | null | example | notes |
+|---|---:|:---:|---|---|
+| id | bigint PK | no | 7001 | identity |
+| session_id | bigint FK(sessions.id) | no | 1001 | ON DELETE CASCADE |
+| step_ui | int | no | 1/4/8 | CHECK: >= 1 |
+| asset_id | bigint FK(assets.id) | no | 6001 | ON DELETE RESTRICT |
+| role | text | no | reference/step_image | CHECK enum |
+| reference_asset_id | bigint FK(assets.id) | yes | 6001 | ref for i2i |
+| image_model | text | no | flux.2-pro | |
+| prompt | text | no | ... | |
+| created_at | timestamptz | no | now() | |
+
+Constraints:
+- UNIQUE(session_id, step_ui, role)
+- role='reference' ⇒ step_ui = 1
+- role='reference' ⇒ reference_asset_id IS NULL
+
+Indexes:
+- INDEX(session_images.session_id)
+- INDEX(session_images.session_id, session_images.step_ui)
+

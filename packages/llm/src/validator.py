@@ -83,7 +83,33 @@ def _looks_truncated(raw_text: str) -> bool:
         return False
     if ":" not in stripped and "\"" not in stripped:
         return False
-    return stripped[-1] not in {"}", "]"}
+    in_string = False
+    escape = False
+    brace_balance = 0
+    bracket_balance = 0
+    for char in stripped:
+        if escape:
+            escape = False
+            continue
+        if char == "\\" and in_string:
+            escape = True
+            continue
+        if char == "\"":
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            brace_balance += 1
+        elif char == "}":
+            brace_balance -= 1
+        elif char == "[":
+            bracket_balance += 1
+        elif char == "]":
+            bracket_balance -= 1
+    if in_string:
+        return True
+    return brace_balance > 0 or bracket_balance > 0
 
 
 def _looks_like_json(raw_text: str) -> bool:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Dict, Optional
 
 from db.repos import sessions
@@ -8,6 +9,8 @@ from packages.engine.src.engine_v0_1 import init_state_v01
 from packages.llm.src import generate as llm_generate
 from src.keyboards.l3 import build_final_keyboard, build_l3_keyboard
 from src.services.content_stub import build_content_step
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -100,6 +103,7 @@ def build_step_result(
         "choices": keyboard_choices,
         "allow_free_text": state["free_text_allowed_after"],
         "final_id": None,
+        "choices_source": "stub",
     }
     step_ctx = {
         "expected_type": expected_type_for_step(state["step0"], state["n"]),
@@ -128,15 +132,26 @@ def build_step_result(
         if isinstance(llm_text, str) and llm_text.strip():
             step_result["text"] = llm_text
         llm_choices = []
-        for choice in llm_result.parsed_json.get("choices", []):
-            if not isinstance(choice, dict):
-                continue
-            choice_id = choice.get("choice_id") or choice.get("id")
-            label = choice.get("label") or choice.get("text")
-            if isinstance(choice_id, str) and isinstance(label, str):
-                llm_choices.append({"choice_id": choice_id, "label": label})
+        parsed_choices = llm_result.parsed_json.get("choices", [])
+        if isinstance(parsed_choices, list):
+            for choice in parsed_choices:
+                if not isinstance(choice, dict):
+                    continue
+                choice_id = choice.get("choice_id") or choice.get("id")
+                label = choice.get("label") or choice.get("text")
+                if isinstance(choice_id, str) and isinstance(label, str):
+                    llm_choices.append({"choice_id": choice_id, "label": label})
         if llm_choices:
             step_result["choices"] = llm_choices
+            step_result["choices_source"] = "llm"
+        else:
+            fallback_choices = keyboard_choices[:2] if len(keyboard_choices) >= 2 else []
+            step_result["choices"] = fallback_choices
+            step_result["choices_source"] = "fallback"
+    else:
+        fallback_choices = keyboard_choices[:2] if len(keyboard_choices) >= 2 else []
+        step_result["choices"] = fallback_choices
+        step_result["choices_source"] = "fallback"
     return step_result
 
 
@@ -145,6 +160,26 @@ def step_result_to_view(step_result: Dict, sid8: str, step: int) -> StepView:
     final_id = step_result.get("final_id")
     choices = step_result.get("choices") or []
     allow_free_text = bool(step_result.get("allow_free_text"))
+    choices_source = step_result.get("choices_source") or "unknown"
+    if choices:
+        preview_labels = []
+        for choice in choices:
+            label = choice.get("label")
+            if isinstance(label, str):
+                preview_labels.append(label[:60])
+        logger.info(
+            "tg.step_send step_ui=%s choices_len=%s choices_source=%s labels=%s",
+            step + 1,
+            len(choices),
+            choices_source,
+            preview_labels,
+        )
+    else:
+        logger.info(
+            "tg.step_send step_ui=%s choices_len=0 choices_source=%s",
+            step + 1,
+            choices_source,
+        )
     if final_id or not choices:
         keyboard = build_final_keyboard()
     else:

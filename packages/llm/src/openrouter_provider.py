@@ -39,7 +39,7 @@ class OpenRouterProvider:
             "model": self._resolve_model(expected_type),
             "messages": messages,
             "response_format": response_format,
-            "temperature": 0.2,
+            "temperature": self._resolve_temperature(expected_type),
         }
         if reasoning is not None:
             payload["reasoning"] = reasoning
@@ -109,12 +109,7 @@ class OpenRouterProvider:
             user_content: str = json.dumps(story_request, ensure_ascii=False)
         else:
             user_content = "" if story_request is None else str(story_request)
-        system_prompt = "Верни только JSON. Без markdown. Без пояснений."
-        if step_ctx.get("expected_type") == "story_final":
-            system_prompt = (
-                "Верни только JSON. Без markdown. Без пояснений. "
-                "Финал должен быть кратким (1-3 предложения)."
-            )
+        system_prompt = self._resolve_system_prompt(step_ctx.get("expected_type"))
         return [
             {
                 "role": "system",
@@ -139,6 +134,44 @@ class OpenRouterProvider:
             return int(raw)
         except ValueError:
             return None
+
+    def _resolve_temperature(self, expected_type: Any) -> float:
+        if expected_type == "story_final":
+            raw = os.getenv("OPENROUTER_TEMPERATURE_FINAL", "").strip()
+        else:
+            raw = os.getenv("OPENROUTER_TEMPERATURE_STEP", "").strip()
+        if not raw:
+            raw = os.getenv("OPENROUTER_TEMPERATURE", "").strip()
+        if not raw:
+            raw = "0.5" if expected_type == "story_final" else "0.6"
+        try:
+            return float(raw)
+        except ValueError:
+            return 0.5
+
+    def _resolve_system_prompt(self, expected_type: Any) -> str:
+        if expected_type == "story_final":
+            override = os.getenv("OPENROUTER_SYSTEM_PROMPT_FINAL", "").strip()
+            if override:
+                return override
+            return (
+                "Ты пишешь финал детской сказки. Отвечай только одним JSON-объектом без markdown и "
+                "без текста вне JSON. Вход: один JSON (story_request). Выход строго: "
+                "{\"text\":\"...\"}. Текст на русском, 3–7 предложений или 500–900 символов. "
+                "Уровень фантазирования: средний. Можно добавлять атмосферные детали, но не ломай факты "
+                "из scene_text."
+            )
+        override = os.getenv("OPENROUTER_SYSTEM_PROMPT_STEP", "").strip()
+        if override:
+            return override
+        return (
+            "Ты пишешь следующий шаг детской сказки. Отвечай только одним JSON-объектом без markdown и "
+            "без текста вне JSON. Вход: один JSON (story_request). Выход строго: "
+            "{\"text\":\"...\",\"choices\":[{\"choice_id\":\"A\",\"label\":\"...\"}]}. "
+            "Текст на русском, 600–1200 символов. Уровень фантазирования: средний. "
+            "Сохраняй choice_id строго как во входе (A/B/C), а label придумывай сам. "
+            "Избегай одинаковых штампов на каждом шаге, делай вариативные формулировки."
+        )
 
     def _resolve_timeout(self) -> float:
         raw = os.getenv("OPENROUTER_TIMEOUT_S", "30").strip()

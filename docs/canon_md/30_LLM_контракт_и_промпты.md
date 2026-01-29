@@ -242,3 +242,22 @@ TG.7.4.01 — Image Provider v0.1 (FLUX.2 Pro) — UX/Delivery Rule
 - base64 в Postgres не пишем
 - только assets(storage_key, sha256, bytes, mime, w/h) + session_images(step_ui, role, reference_asset_id, image_model, prompt)
 
+============================================================
+LLM runtime contract (факт)
+============================================================
+
+1) Что отправляем
+- messages[]: строго два сообщения.
+  - system: канонический промпт (JSON-only, правила, стиль).
+  - user: JSON story_request (без markdown).
+- request параметры: model, response_format, temperature, max_tokens, reasoning, plugins.
+
+2) Что получаем
+- JSON-only ответ:
+  - story_step: {"text":"...","choices":[{"choice_id":"A","label":"..."}]}
+  - story_final: {"text":"..."}
+- Кнопки в Telegram строятся из parsed_json.choices (label + choice_id).
+
+3) Отладка и дампы
+- Дампы: var/llm_dumps/*.json (на хосте: /srv/git/skazka/var/llm_dumps).
+- Просмотр: apps/tg-bot/scripts/llm_dump_show.sh (или llm_dump_show.py).

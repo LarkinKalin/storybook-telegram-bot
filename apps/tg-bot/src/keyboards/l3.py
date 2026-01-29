@@ -13,7 +13,7 @@ def build_l3_keyboard(
     if choices:
         choice_buttons = [
             InlineKeyboardButton(
-                text=choice["label"],
+                text=choice["choice_id"],
                 callback_data=f"l3:choice:{choice['choice_id']}:{sid8}:{step}",
             )
             for choice in choices

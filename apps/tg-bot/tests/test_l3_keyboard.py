@@ -31,16 +31,19 @@ def _first_row_count(markup) -> int:
 def test_keyboard_choices_len_three():
     markup = build_l3_keyboard(_choices(3), allow_free_text=True, sid8="sid", step=1)
     assert _first_row_count(markup) == 3
+    assert [button.text for button in markup.inline_keyboard[0]] == ["A", "B", "C"]
 
 
 def test_keyboard_choices_len_two():
     markup = build_l3_keyboard(_choices(2), allow_free_text=True, sid8="sid", step=1)
     assert _first_row_count(markup) == 2
+    assert [button.text for button in markup.inline_keyboard[0]] == ["A", "B"]
 
 
 def test_keyboard_choices_len_one():
     markup = build_l3_keyboard(_choices(1), allow_free_text=True, sid8="sid", step=1)
     assert _first_row_count(markup) == 1
+    assert markup.inline_keyboard[0][0].text == "A"
 
 
 def test_keyboard_choices_len_zero():

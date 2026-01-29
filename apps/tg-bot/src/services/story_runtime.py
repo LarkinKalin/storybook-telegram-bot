@@ -155,18 +155,47 @@ def build_step_result(
     return step_result
 
 
+def render_choices_block(choices: list[dict]) -> str:
+    if not choices:
+        return ""
+    order = {"A": 0, "B": 1, "C": 2}
+
+    def _sort_key(choice: dict) -> tuple[int, str]:
+        choice_id = choice.get("choice_id")
+        if isinstance(choice_id, str):
+            return (order.get(choice_id.upper(), 99), choice_id)
+        return (99, "")
+
+    lines = ["Выбор:"]
+    for choice in sorted(choices, key=_sort_key):
+        choice_id = choice.get("choice_id")
+        label = choice.get("label")
+        if isinstance(choice_id, str) and isinstance(label, str):
+            lines.append(f"{choice_id}) {label}")
+    if len(lines) == 1:
+        return ""
+    lines.append("")
+    lines.append("(Можно выбрать A/B/C кнопками или написать свой вариант.)")
+    return "\n".join(lines)
+
+
 def step_result_to_view(step_result: Dict, sid8: str, step: int) -> StepView:
     text = step_result.get("text") or ""
     final_id = step_result.get("final_id")
     choices = step_result.get("choices") or []
     allow_free_text = bool(step_result.get("allow_free_text"))
     choices_source = step_result.get("choices_source") or "unknown"
+    if choices and not final_id:
+        choices_block = render_choices_block(choices)
+        if choices_block:
+            text = f"{text}\n\n{choices_block}"
     if choices:
         preview_labels = []
         for choice in choices:
+            choice_id = choice.get("choice_id")
             label = choice.get("label")
-            if isinstance(label, str):
-                preview_labels.append(label[:60])
+            if isinstance(choice_id, str) and isinstance(label, str):
+                preview_labels.append(f"{choice_id}:{label[:60]}")
         logger.info(
             "tg.step_send step_ui=%s choices_len=%s choices_source=%s labels=%s",
             step + 1,

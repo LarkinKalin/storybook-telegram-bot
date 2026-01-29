@@ -10,7 +10,7 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from packages.engine.src.engine_v0_1 import init_state_v01  # noqa: E402
-from src.services.story_runtime import build_step_result  # noqa: E402
+from src.services.story_runtime import build_step_result, step_result_to_view  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -26,3 +26,6 @@ def test_step_result_uses_llm_choices() -> None:
     labels = [choice["label"] for choice in step_result["choices"]]
     assert step_result["choices_source"] == "llm"
     assert any("Смелый путь" in label for label in labels)
+    view = step_result_to_view(step_result, sid8="sid", step=0)
+    assert "Выбор:" in view.text
+    assert "A)" in view.text

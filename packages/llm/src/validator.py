@@ -109,6 +109,8 @@ def _looks_truncated(raw_text: str) -> bool:
             bracket_balance -= 1
     if in_string:
         return True
+    if brace_balance < 0 or bracket_balance < 0:
+        return False
     return brace_balance > 0 or bracket_balance > 0
 
 

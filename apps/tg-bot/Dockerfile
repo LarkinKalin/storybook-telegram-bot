@@ -9,6 +9,7 @@ COPY apps/tg-bot/src/ /app/src/
 COPY apps/tg-bot/scripts/ /app/apps/tg-bot/scripts/
 COPY packages/db/src/ /app/packages/db/src/
 COPY packages/db/migrations/ /app/packages/db/migrations/
+COPY packages/db/tests/ /app/packages/db/tests/
 COPY packages/engine/ /app/packages/engine/
 COPY packages/llm/ /app/packages/llm/
 

@@ -46,7 +46,7 @@ def get_conn() -> Iterator[Connection]:
     try:
         with get_pool().connection() as conn:
             yield conn
-    except (OperationalError, DatabaseError) as exc:
+    except OperationalError as exc:
         logger.exception("DB connection failed", exc_info=True)
         _reset_pool()
         raise DBUnavailable("DB connection failed") from exc

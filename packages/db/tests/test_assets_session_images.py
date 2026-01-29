@@ -1,5 +1,7 @@
+import hashlib
 import os
 from time import time_ns
+from uuid import uuid4
 
 import pytest
 
@@ -18,14 +20,15 @@ def _create_session() -> dict:
     )
 
 
-def _create_asset(storage_key: str, sha_seed: str) -> int:
+def _create_asset(storage_key: str) -> int:
+    sha256 = hashlib.sha256(f"{storage_key}:{uuid4()}".encode()).hexdigest()
     return assets.insert_asset(
         kind="image",
         storage_backend="fs",
         storage_key=storage_key,
         mime="image/png",
         bytes=123,
-        sha256=(sha_seed * 64)[:64],
+        sha256=sha256,
         width=10,
         height=20,
     )
@@ -53,7 +56,7 @@ def test_session_images_unique_role_per_step() -> None:
     if not os.getenv("DB_URL"):
         pytest.skip("DB_URL not set")
     session_row = _create_session()
-    asset_id = _create_asset("unique-role", "a")
+    asset_id = _create_asset("unique-role")
     session_images.insert_session_image(
         session_id=session_row["id"],
         step_ui=1,
@@ -79,7 +82,7 @@ def test_reference_only_step1_check() -> None:
     if not os.getenv("DB_URL"):
         pytest.skip("DB_URL not set")
     session_row = _create_session()
-    asset_id = _create_asset("reference-only", "b")
+    asset_id = _create_asset("reference-only")
     with pytest.raises(Exception):
         session_images.insert_session_image(
             session_id=session_row["id"],
@@ -96,7 +99,7 @@ def test_insert_and_list_session_images() -> None:
     if not os.getenv("DB_URL"):
         pytest.skip("DB_URL not set")
     session_row = _create_session()
-    asset_id = _create_asset("list-session", "c")
+    asset_id = _create_asset("list-session")
     session_image_id = session_images.insert_session_image(
         session_id=session_row["id"],
         step_ui=1,

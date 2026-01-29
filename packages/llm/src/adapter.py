@@ -141,11 +141,15 @@ def _generate_with_provider(
     last_usage: Dict[str, Any] | None = None
     last_finish_reason: str | None = None
     last_native_finish_reason: str | None = None
+    last_request_payload: Dict[str, Any] | None = None
+    last_response_payload: Dict[str, Any] | None = None
 
     attempt = 1
     while True:
         try:
             last_raw_text = provider.generate(step_ctx)
+            last_request_payload = getattr(provider, "last_request_payload", None)
+            last_response_payload = getattr(provider, "last_response_payload", None)
             last_usage = getattr(provider, "last_usage", None)
             last_finish_reason = getattr(provider, "last_finish_reason", None)
             last_native_finish_reason = getattr(provider, "last_native_finish_reason", None)
@@ -200,6 +204,19 @@ def _generate_with_provider(
             expected_type,
             attempt,
         )
+        _dump_debug(
+            step_ctx=step_ctx,
+            provider_name=provider_name,
+            expected_type=expected_type,
+            raw_text=last_raw_text,
+            usage=last_usage,
+            error_reason=None,
+            finish_reason=last_finish_reason,
+            native_finish_reason=last_native_finish_reason,
+            request=last_request_payload,
+            response=last_response_payload,
+            parsed_json=parsed_json,
+        )
         return LLMResult(
             expected_type=expected_type,
             raw_text=last_raw_text,
@@ -211,6 +228,7 @@ def _generate_with_provider(
             error_reason=None,
         )
 
+    fallback_json = build_fallback(expected_type)
     _dump_debug(
         step_ctx=step_ctx,
         provider_name=provider_name,
@@ -220,8 +238,10 @@ def _generate_with_provider(
         error_reason=last_error_reason,
         finish_reason=last_finish_reason,
         native_finish_reason=last_native_finish_reason,
+        request=last_request_payload,
+        response=last_response_payload,
+        parsed_json=fallback_json,
     )
-    fallback_json = build_fallback(expected_type)
     reason = last_error_reason or "unknown"
     logger.info(
         "llm.fallback expected=%s reason=%s",
@@ -250,6 +270,9 @@ def _dump_debug(
     error_reason: str | None,
     finish_reason: str | None,
     native_finish_reason: str | None,
+    request: Dict[str, Any] | None = None,
+    response: Dict[str, Any] | None = None,
+    parsed_json: Dict[str, Any] | None = None,
 ) -> None:
     dump_dir = os.getenv("LLM_DEBUG_DUMP_DIR", "").strip()
     if not dump_dir:
@@ -264,8 +287,11 @@ def _dump_debug(
             "req_id": req_id,
             "provider": provider_name,
             "expected_type": expected_type,
+            "request": request,
+            "response": response,
             "error_reason": error_reason,
             "raw_text": raw_text,
+            "parsed_json": parsed_json,
             "usage": usage,
             "finish_reason": finish_reason,
             "native_finish_reason": native_finish_reason,

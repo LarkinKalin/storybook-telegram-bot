@@ -48,6 +48,8 @@ class OpenRouterProvider:
             payload["plugins"] = plugins
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        self.last_request_payload = payload
+        self.last_request_messages = messages
 
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -73,16 +75,17 @@ class OpenRouterProvider:
         except requests.exceptions.HTTPError:
             raise
 
-        payload = response.json()
-        self.last_usage = payload.get("usage")
+        response_payload = response.json()
+        self.last_response_payload = response_payload
+        self.last_usage = response_payload.get("usage")
         self.last_finish_reason = (
-            payload.get("choices", [{}])[0].get("finish_reason")
+            response_payload.get("choices", [{}])[0].get("finish_reason")
         )
         self.last_native_finish_reason = (
-            payload.get("choices", [{}])[0].get("native_finish_reason")
+            response_payload.get("choices", [{}])[0].get("native_finish_reason")
         )
         content = (
-            payload.get("choices", [{}])[0]
+            response_payload.get("choices", [{}])[0]
             .get("message", {})
             .get("content")
         )

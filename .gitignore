@@ -5,6 +5,7 @@
 # local backups/logs
 backups/
 *.log
+var/
 
 # python
 __pycache__/

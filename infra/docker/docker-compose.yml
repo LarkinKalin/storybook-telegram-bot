@@ -8,9 +8,11 @@ services:
       - /etc/skazka/skazka.env
     environment:
       - SKAZKA_CONTENT_DIR=/app/content
+      - LLM_DEBUG_DUMP_DIR=/app/var/llm_dumps
     volumes:
       - ../../content:/app/content:ro
       - /srv/git/skazka/var/assets:/app/var/assets
+      - /srv/git/skazka/var:/app/var
     restart: unless-stopped
     depends_on:
       - postgres

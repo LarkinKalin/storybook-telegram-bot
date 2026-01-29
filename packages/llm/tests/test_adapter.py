@@ -21,7 +21,7 @@ def test_invalid_json_retry_fallback(monkeypatch):
     assert result.used_fallback is True
     assert result.skipped is False
     assert result.parsed_json is not None
-    assert result.error_reason == "json_parse_error"
+    assert result.error_reason == "invalid_json"
     assert result.usage is None
 
 

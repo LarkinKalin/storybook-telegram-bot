@@ -8,9 +8,15 @@ def test_validator_json_parse_error():
 
 
 def test_validator_truncated_output():
-    parsed, reason = validate_response("{\"text\": \"hi\"", "story_final")
+    parsed, reason = validate_response("{\"text\": \"hi\", \"choices\": []", "story_final")
     assert parsed is None
     assert reason == "truncated_output"
+
+
+def test_validator_invalid_json():
+    parsed, reason = validate_response("<<<not json>>>", "story_step")
+    assert parsed is None
+    assert reason == "invalid_json"
 
 
 def test_validator_missing_required_fields():

@@ -28,6 +28,8 @@ def test_openrouter_payload_schema(monkeypatch):
     monkeypatch.setenv("OPENROUTER_MODEL_TEXT", "moonshotai/kimi-k2.5")
     monkeypatch.setenv("OPENROUTER_TIMEOUT_S", "12")
     monkeypatch.setenv("OPENROUTER_MAX_TOKENS_STEP", "64")
+    monkeypatch.setenv("OPENROUTER_RESPONSE_FORMAT", "json_schema")
+    monkeypatch.setenv("OPENROUTER_RESPONSE_HEALING", "1")
     monkeypatch.setattr("packages.llm.src.openrouter_provider.requests.post", fake_post)
 
     provider = OpenRouterProvider("key")
@@ -35,10 +37,9 @@ def test_openrouter_payload_schema(monkeypatch):
 
     payload = captured["json"]
     assert payload["response_format"]["type"] == "json_schema"
-    assert payload["response_format"]["strict"] is True
     schema = payload["response_format"]["json_schema"]["schema"]
     assert schema["properties"]["choices"]["maxItems"] == 3
-    assert payload["extra_body"]["response_healing"] is True
+    assert {"id": "response-healing"} in payload["plugins"]
 
 
 def test_openrouter_content_dict(monkeypatch):

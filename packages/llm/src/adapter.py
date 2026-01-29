@@ -139,12 +139,16 @@ def _generate_with_provider(
     last_error_reason: Optional[str] = None
     last_raw_text = ""
     last_usage: Dict[str, Any] | None = None
+    last_finish_reason: str | None = None
+    last_native_finish_reason: str | None = None
 
     attempt = 1
     while True:
         try:
             last_raw_text = provider.generate(step_ctx)
             last_usage = getattr(provider, "last_usage", None)
+            last_finish_reason = getattr(provider, "last_finish_reason", None)
+            last_native_finish_reason = getattr(provider, "last_native_finish_reason", None)
         except Exception as exc:  # noqa: BLE001
             last_error_class = type(exc).__name__
             if isinstance(exc, TimeoutError):
@@ -214,6 +218,8 @@ def _generate_with_provider(
         raw_text=last_raw_text,
         usage=last_usage,
         error_reason=last_error_reason,
+        finish_reason=last_finish_reason,
+        native_finish_reason=last_native_finish_reason,
     )
     fallback_json = build_fallback(expected_type)
     reason = last_error_reason or "unknown"
@@ -242,6 +248,8 @@ def _dump_debug(
     raw_text: str,
     usage: Dict[str, Any] | None,
     error_reason: str | None,
+    finish_reason: str | None,
+    native_finish_reason: str | None,
 ) -> None:
     dump_dir = os.getenv("LLM_DEBUG_DUMP_DIR", "").strip()
     if not dump_dir:
@@ -259,6 +267,8 @@ def _dump_debug(
             "error_reason": error_reason,
             "raw_text": raw_text,
             "usage": usage,
+            "finish_reason": finish_reason,
+            "native_finish_reason": native_finish_reason,
         }
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2)

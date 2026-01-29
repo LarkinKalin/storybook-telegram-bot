@@ -10,9 +10,15 @@ def validate_response(raw_text: str, expected_type: str) -> Tuple[Dict[str, Any]
     except json.JSONDecodeError:
         if _looks_truncated(raw_text):
             return None, "truncated_output"
-        return None, "json_parse_error"
+        if _looks_like_json(raw_text):
+            return None, "json_parse_error"
+        return None, "invalid_json"
     if not isinstance(parsed, dict):
         return None, "json_parse_error"
+
+    type_hint = parsed.get("expected_type") or parsed.get("type")
+    if isinstance(type_hint, str) and type_hint != expected_type:
+        return None, "type_mismatch"
 
     if expected_type == "story_step":
         ok, reason = _validate_story_step(parsed)
@@ -73,4 +79,11 @@ def _looks_truncated(raw_text: str) -> bool:
         return False
     if stripped[0] not in {"{", "["}:
         return False
+    if len(stripped) < 20:
+        return False
     return stripped[-1] not in {"}", "]"}
+
+
+def _looks_like_json(raw_text: str) -> bool:
+    stripped = raw_text.lstrip()
+    return stripped.startswith("{") or stripped.startswith("[")

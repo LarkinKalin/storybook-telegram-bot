@@ -32,24 +32,20 @@ class OpenRouterProvider:
         max_tokens = self._resolve_max_tokens(expected_type)
         timeout_s = self._resolve_timeout()
         messages = self._resolve_messages(step_ctx)
-        response_schema = self._build_response_schema(expected_type)
-
-        extra_body = {"response_healing": True}
+        response_format = self._build_response_format(expected_type)
         reasoning = self._resolve_reasoning()
-        if reasoning is not None:
-            extra_body["reasoning"] = reasoning
 
         payload = {
             "model": self._resolve_model(expected_type),
             "messages": messages,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": response_schema,
-                "strict": True,
-            },
+            "response_format": response_format,
             "temperature": 0.2,
-            "extra_body": extra_body,
         }
+        if reasoning is not None:
+            payload["reasoning"] = reasoning
+        plugins = self._resolve_plugins()
+        if plugins:
+            payload["plugins"] = plugins
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
 
@@ -79,6 +75,12 @@ class OpenRouterProvider:
 
         payload = response.json()
         self.last_usage = payload.get("usage")
+        self.last_finish_reason = (
+            payload.get("choices", [{}])[0].get("finish_reason")
+        )
+        self.last_native_finish_reason = (
+            payload.get("choices", [{}])[0].get("native_finish_reason")
+        )
         content = (
             payload.get("choices", [{}])[0]
             .get("message", {})
@@ -149,36 +151,36 @@ class OpenRouterProvider:
             return self._model_final
         return self._model
 
-    def _build_response_schema(self, expected_type: Any) -> Dict[str, Any]:
+    def _build_response_format(self, expected_type: Any) -> Dict[str, Any]:
+        format_mode = os.getenv("OPENROUTER_RESPONSE_FORMAT", "json_object").strip().lower()
+        if format_mode != "json_schema":
+            return {"type": "json_object"}
         if expected_type == "story_step":
-            return {
-                "name": "story_step",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                        "choices": {
-                            "type": "array",
-                            "maxItems": 3,
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "choice_id": {"type": "string"},
-                                    "label": {"type": "string"},
-                                },
-                                "required": ["choice_id", "label"],
-                                "additionalProperties": False,
+            schema = {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "choices": {
+                        "type": "array",
+                        "maxItems": 3,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "choice_id": {"type": "string"},
+                                "label": {"type": "string"},
                             },
+                            "required": ["choice_id", "label"],
+                            "additionalProperties": False,
                         },
-                        "memory": {"type": ["object", "null"]},
                     },
-                    "required": ["text", "choices"],
-                    "additionalProperties": False,
+                    "memory": {"type": ["object", "null"]},
                 },
+                "required": ["text", "choices"],
+                "additionalProperties": False,
             }
-        return {
-            "name": "story_final",
-            "schema": {
+            name = "story_step"
+        else:
+            schema = {
                 "type": "object",
                 "properties": {
                     "text": {"type": "string"},
@@ -192,13 +194,26 @@ class OpenRouterProvider:
                 },
                 "required": ["text"],
                 "additionalProperties": False,
+            }
+            name = "story_final"
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": name,
+                "schema": schema,
+                "strict": True,
             },
         }
 
     def _resolve_reasoning(self) -> Dict[str, Any] | None:
         mode = os.getenv("OPENROUTER_REASONING", "off").strip().lower()
         if not mode or mode == "off":
-            return None
+            return {"enabled": False}
         if mode in {"low", "medium", "high"}:
             return {"enabled": True, "effort": mode}
         return {"enabled": True}
+
+    def _resolve_plugins(self) -> List[Dict[str, str]]:
+        if os.getenv("OPENROUTER_RESPONSE_HEALING", "").strip() != "1":
+            return []
+        return [{"id": "response-healing"}]

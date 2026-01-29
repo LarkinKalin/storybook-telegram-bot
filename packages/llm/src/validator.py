@@ -81,6 +81,8 @@ def _looks_truncated(raw_text: str) -> bool:
         return False
     if len(stripped) < 20:
         return False
+    if ":" not in stripped and "\"" not in stripped:
+        return False
     return stripped[-1] not in {"}", "]"}
 
 

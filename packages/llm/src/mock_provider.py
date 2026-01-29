@@ -41,11 +41,11 @@ class MockProvider:
                 count = int(count_str)
             except ValueError:
                 count = 3
-            return self._build_step_payload(step_ctx, max(count, 0))
+            return self._build_step_payload(step_ctx, max(count, 0), expected_type=expected_type)
         if mode == "ok":
             if expected_type == "story_final":
                 return self._build_payload("story_final", step_ctx)
-            return self._build_step_payload(step_ctx, 3)
+            return self._build_step_payload(step_ctx, 3, expected_type=expected_type)
         return self._build_payload(expected_type, step_ctx)
 
     def _build_payload(self, expected_type: str | None, step_ctx: Dict[str, Any]) -> str:
@@ -57,12 +57,19 @@ class MockProvider:
             payload = {
                 "text": text,
                 "memory": None,
+                "expected_type": expected_type,
             }
             return json.dumps(payload, ensure_ascii=False)
 
-        return self._build_step_payload(step_ctx, 3)
+        return self._build_step_payload(step_ctx, 3, expected_type=expected_type)
 
-    def _build_step_payload(self, step_ctx: Dict[str, Any], count: int) -> str:
+    def _build_step_payload(
+        self,
+        step_ctx: Dict[str, Any],
+        count: int,
+        *,
+        expected_type: str | None = None,
+    ) -> str:
         step = step_ctx.get("step")
         total_steps = step_ctx.get("total_steps")
         header = "Новый шаг истории."
@@ -81,6 +88,7 @@ class MockProvider:
             "text": f"{header} Выберите действие героя:",
             "choices": choices,
             "memory": None,
+            "expected_type": expected_type or step_ctx.get("expected_type"),
         }
         return json.dumps(payload, ensure_ascii=False)
 

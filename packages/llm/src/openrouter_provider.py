@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 import requests
 
+from packages.llm.src.prompt_loader import load_system_prompt_with_source
 
 class MissingOpenRouterKeyError(ValueError):
     pass
@@ -20,6 +21,8 @@ class OpenRouterProvider:
         self._endpoint = "https://openrouter.ai/api/v1/chat/completions"
         self._model = os.getenv("OPENROUTER_MODEL_TEXT", "moonshotai/kimi-k2.5").strip()
         self._model_final = os.getenv("OPENROUTER_MODEL_FINAL", "").strip()
+        self.last_prompt_source: str | None = None
+        self.last_prompt_path: str | None = None
 
     @classmethod
     def from_env(cls) -> "OpenRouterProvider":
@@ -33,15 +36,7 @@ class OpenRouterProvider:
         theme_id = step_ctx.get("theme_id")
         max_tokens = self._resolve_max_tokens(expected_type)
         timeout_s = self._resolve_timeout()
-        theme_config = self._resolve_theme_config(theme_id)
-        if not theme_config.system_prompt_step:
-            theme_config = self._apply_default_prompt(theme_config)
-        if theme_config.max_tokens_step is not None or theme_config.max_tokens_final is not None:
-            max_tokens = self._resolve_theme_max_tokens(expected_type, theme_config, max_tokens)
-        temperature = self._resolve_temperature(expected_type)
-        if theme_config.temperature_step is not None or theme_config.temperature_final is not None:
-            temperature = self._resolve_theme_temperature(expected_type, theme_config, temperature)
-        messages = self._resolve_messages(step_ctx, theme_config)
+        messages = self._resolve_messages(step_ctx)
         response_format = self._build_response_format(expected_type)
         reasoning = self._resolve_reasoning()
 
@@ -121,10 +116,12 @@ class OpenRouterProvider:
             user_content: str = json.dumps(story_request, ensure_ascii=False)
         else:
             user_content = "" if story_request is None else str(story_request)
-        system_prompt = self._resolve_system_prompt(
-            step_ctx.get("expected_type"),
-            theme_config=theme_config,
-        )
+        system_prompt = "Верни только JSON. Без markdown. Без пояснений."
+        if step_ctx.get("expected_type") == "story_final":
+            system_prompt = (
+                "Верни только JSON. Без markdown. Без пояснений. "
+                "Финал должен быть кратким (1-3 предложения)."
+            )
         return [
             {
                 "role": "system",
@@ -149,57 +146,6 @@ class OpenRouterProvider:
             return int(raw)
         except ValueError:
             return None
-
-    def _resolve_temperature(self, expected_type: Any) -> float:
-        if expected_type == "story_final":
-            raw = os.getenv("OPENROUTER_TEMPERATURE_FINAL", "").strip()
-        else:
-            raw = os.getenv("OPENROUTER_TEMPERATURE_STEP", "").strip()
-        if not raw:
-            raw = os.getenv("OPENROUTER_TEMPERATURE", "").strip()
-        if not raw:
-            raw = "0.5" if expected_type == "story_final" else "0.6"
-        try:
-            return float(raw)
-        except ValueError:
-            return 0.5
-
-    def _resolve_system_prompt(
-        self,
-        expected_type: Any,
-        *,
-        theme_config: "_ThemeConfig",
-    ) -> str:
-        if expected_type == "story_final" and theme_config.system_prompt_final:
-            return theme_config.system_prompt_final
-        if expected_type != "story_final" and theme_config.system_prompt_step:
-            return theme_config.system_prompt_step
-        if expected_type == "story_final":
-            override = os.getenv("OPENROUTER_SYSTEM_PROMPT_FINAL", "").strip()
-            if override:
-                return override
-            return (
-                "Ты пишешь финал детской сказки. Отвечай только одним JSON-объектом без markdown и "
-                "без текста вне JSON. Вход: один JSON (story_request). Выход строго: "
-                "{\"text\":\"...\"}. Текст на русском, 3–7 предложений или 500–900 символов. "
-                "Уровень фантазирования: средний. Можно добавлять атмосферные детали, но не ломай факты "
-                "из scene_text. Правила движка: история связная, выборы влияют на состояние, "
-                "но числа и параметры игроку не показывай."
-            )
-        override = os.getenv("OPENROUTER_SYSTEM_PROMPT_STEP", "").strip()
-        if override:
-            return override
-        return (
-            "Ты пишешь следующий шаг детской сказки. Отвечай только одним JSON-объектом без markdown и "
-            "без текста вне JSON. Вход: один JSON (story_request). Выход строго: "
-            "{\"text\":\"...\",\"recap_short\":\"...\",\"choices\":[{\"choice_id\":\"A\",\"label\":\"...\"}]}. "
-            "Текст на русском, 600–1200 символов. recap_short: 1–2 предложения, 120–240 символов, "
-            "только факты текущего шага без новых сущностей. Уровень фантазирования: средний. "
-            "Сохраняй choice_id строго как во входе (A/B/C), а label придумывай сам как действия "
-            "персонажа (без слов «смелость/доброта/мудрость»). Избегай одинаковых штампов на каждом шаге, "
-            "делай вариативные формулировки. Правила движка: в каждом шаге есть выбор A/B/C, "
-            "выбор влияет на состояние по правилам движка, числа не раскрывай игроку."
-        )
 
     def _resolve_timeout(self) -> float:
         raw = os.getenv("OPENROUTER_TIMEOUT_S", "30").strip()
@@ -282,118 +228,3 @@ class OpenRouterProvider:
         if os.getenv("OPENROUTER_RESPONSE_HEALING", "").strip() != "1":
             return []
         return [{"id": "response-healing"}]
-
-    def _resolve_theme_max_tokens(
-        self,
-        expected_type: Any,
-        theme_config: "_ThemeConfig",
-        fallback: int | None,
-    ) -> int | None:
-        if expected_type == "story_final" and theme_config.max_tokens_final is not None:
-            return theme_config.max_tokens_final
-        if expected_type != "story_final" and theme_config.max_tokens_step is not None:
-            return theme_config.max_tokens_step
-        return fallback
-
-    def _resolve_theme_temperature(
-        self,
-        expected_type: Any,
-        theme_config: "_ThemeConfig",
-        fallback: float,
-    ) -> float:
-        if expected_type == "story_final" and theme_config.temperature_final is not None:
-            return theme_config.temperature_final
-        if expected_type != "story_final" and theme_config.temperature_step is not None:
-            return theme_config.temperature_step
-        return fallback
-
-    def _resolve_theme_config(self, theme_id: Any) -> "_ThemeConfig":
-        if not isinstance(theme_id, str) or not theme_id:
-            return _ThemeConfig()
-        base_dir = Path(os.getenv("LLM_PROMPT_DIR", "content/prompts"))
-        json_path = base_dir / f"{theme_id}.json"
-        if json_path.exists():
-            try:
-                data = json.loads(json_path.read_text(encoding="utf-8"))
-            except OSError:
-                return _ThemeConfig()
-            return _ThemeConfig.from_payload(data)
-        txt_path = base_dir / f"{theme_id}.txt"
-        if txt_path.exists():
-            try:
-                text = txt_path.read_text(encoding="utf-8").strip()
-            except OSError:
-                return _ThemeConfig()
-            if text:
-                return _ThemeConfig(system_prompt_step=text, system_prompt_final=text)
-        return _ThemeConfig()
-
-    def _apply_default_prompt(self, theme_config: "_ThemeConfig") -> "_ThemeConfig":
-        base_dir = Path(os.getenv("LLM_PROMPT_DIR", "content/prompts"))
-        default_path = base_dir / "default.txt"
-        if not default_path.exists():
-            return theme_config
-        try:
-            text = default_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            return theme_config
-        if not text:
-            return theme_config
-        return _ThemeConfig(
-            system_prompt_step=text,
-            system_prompt_final=theme_config.system_prompt_final or text,
-            temperature_step=theme_config.temperature_step,
-            temperature_final=theme_config.temperature_final,
-            max_tokens_step=theme_config.max_tokens_step,
-            max_tokens_final=theme_config.max_tokens_final,
-        )
-
-
-class _ThemeConfig:
-    def __init__(
-        self,
-        *,
-        system_prompt_step: str | None = None,
-        system_prompt_final: str | None = None,
-        temperature_step: float | None = None,
-        temperature_final: float | None = None,
-        max_tokens_step: int | None = None,
-        max_tokens_final: int | None = None,
-    ) -> None:
-        self.system_prompt_step = system_prompt_step
-        self.system_prompt_final = system_prompt_final
-        self.temperature_step = temperature_step
-        self.temperature_final = temperature_final
-        self.max_tokens_step = max_tokens_step
-        self.max_tokens_final = max_tokens_final
-
-    @classmethod
-    def from_payload(cls, payload: Dict[str, Any]) -> "_ThemeConfig":
-        return cls(
-            system_prompt_step=_as_str(payload.get("system_prompt_step")),
-            system_prompt_final=_as_str(payload.get("system_prompt_final")),
-            temperature_step=_as_float(payload.get("temperature_step")),
-            temperature_final=_as_float(payload.get("temperature_final")),
-            max_tokens_step=_as_int(payload.get("max_tokens_step")),
-            max_tokens_final=_as_int(payload.get("max_tokens_final")),
-        )
-
-
-def _as_str(value: Any) -> str | None:
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return None
-
-
-def _as_float(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _as_int(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None

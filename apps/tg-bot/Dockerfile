@@ -12,6 +12,7 @@ COPY packages/db/migrations/ /app/packages/db/migrations/
 COPY packages/db/tests/ /app/packages/db/tests/
 COPY packages/engine/ /app/packages/engine/
 COPY packages/llm/ /app/packages/llm/
+COPY content/ /app/content/
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app:/app/packages/db/src

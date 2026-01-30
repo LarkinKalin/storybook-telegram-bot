@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from packages.llm.src.openrouter_provider import OpenRouterProvider
 
@@ -32,7 +33,8 @@ def test_openrouter_payload_schema(monkeypatch):
     monkeypatch.setenv("OPENROUTER_MAX_TOKENS_STEP", "64")
     monkeypatch.setenv("OPENROUTER_RESPONSE_FORMAT", "json_schema")
     monkeypatch.setenv("OPENROUTER_RESPONSE_HEALING", "1")
-    monkeypatch.setenv("LLM_PROMPT_DIR", "content/prompts")
+    repo_root = Path(__file__).resolve().parents[3]
+    monkeypatch.setenv("SKAZKA_CONTENT_DIR", str(repo_root / "content"))
     monkeypatch.setattr("packages.llm.src.openrouter_provider.requests.post", fake_post)
 
     provider = OpenRouterProvider("key")
@@ -45,6 +47,10 @@ def test_openrouter_payload_schema(monkeypatch):
     assert schema["properties"]["choices"]["maxItems"] == 3
     assert {"id": "response-healing"} in payload["plugins"]
     assert payload["messages"][0]["role"] == "system"
+    assert "ДУГА НА 8 ШАГОВ" in payload["messages"][0]["content"]
+    assert "400–800" in payload["messages"][0]["content"]
+    assert provider.last_prompt_source.startswith("file:")
+    assert provider.last_prompt_path.endswith("content/prompts/story_step/default.txt")
 
 
 def test_openrouter_content_dict(monkeypatch):

@@ -308,6 +308,8 @@ def _dump_debug(
                 "last_choice": step_ctx.get("last_choice"),
                 "recaps_count": step_ctx.get("recaps_count"),
             },
+            "prompt_source": step_ctx.get("prompt_source"),
+            "prompt_path": step_ctx.get("prompt_path"),
             "request": request,
             "response": response,
             "engine_input": engine_input,

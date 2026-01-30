@@ -215,8 +215,18 @@ def _build_prompts(question: str) -> tuple[str, str]:
 
 
 def _prompt_dir() -> Path:
-    repo_root = Path(__file__).resolve().parents[4]
-    return repo_root / "packages" / "llm" / "prompt_templates"
+    override = os.getenv("WHY_PROMPT_DIR", "").strip()
+    if override:
+        return Path(override)
+    current = Path(__file__).resolve()
+    for parent in [current] + list(current.parents):
+        candidate = parent / "packages" / "llm" / "prompt_templates"
+        if candidate.is_dir():
+            return candidate
+    fallback = Path("/app/packages/llm/prompt_templates")
+    if fallback.is_dir():
+        return fallback
+    return Path("packages/llm/prompt_templates")
 
 
 def _resolve_api_key() -> str:

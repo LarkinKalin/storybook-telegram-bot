@@ -28,9 +28,12 @@ _ASSETS_IMAGE_DIR = "images"
 class ImageSchedule:
     step_ui: int
     total_steps: int
+    step0: int | None = None
 
     @property
     def needs_image(self) -> bool:
+        if self.step0 is not None:
+            return self.step0 in image_steps0(self.total_steps)
         return self.step_ui in image_steps(self.total_steps)
 
     @property
@@ -46,6 +49,14 @@ def image_steps(total_steps: int) -> set[int]:
     return {1}
 
 
+def image_steps0(total_steps: int) -> set[int]:
+    if total_steps >= 12:
+        return {0, 4, 8}
+    if total_steps >= 8:
+        return {0, 3, 7}
+    return {0}
+
+
 def schedule_image_delivery(
     *,
     bot: Bot,
@@ -56,13 +67,15 @@ def schedule_image_delivery(
     total_steps: int,
     prompt: str,
     theme_id: str | None = None,
+    step0: int | None = None,
 ) -> None:
-    schedule = ImageSchedule(step_ui=step_ui, total_steps=total_steps)
+    schedule = ImageSchedule(step_ui=step_ui, total_steps=total_steps, step0=step0)
     logger.info(
-        "TG.7.4.01 needs_image=%s session_id=%s step_ui=%s total_steps=%s",
+        "TG.7.4.01 needs_image=%s session_id=%s step_ui=%s step0=%s total_steps=%s",
         schedule.needs_image,
         session_id,
         step_ui,
+        step0,
         total_steps,
     )
     if not schedule.needs_image:
@@ -77,6 +90,7 @@ def schedule_image_delivery(
             total_steps=total_steps,
             prompt=prompt,
             theme_id=theme_id,
+            step0=step0,
         )
     )
 
@@ -91,8 +105,9 @@ async def _generate_and_send_image(
     total_steps: int,
     prompt: str,
     theme_id: str | None,
+    step0: int | None,
 ) -> None:
-    schedule = ImageSchedule(step_ui=step_ui, total_steps=total_steps)
+    schedule = ImageSchedule(step_ui=step_ui, total_steps=total_steps, step0=step0)
     if not schedule.needs_image:
         return
 
@@ -144,11 +159,12 @@ async def _generate_and_send_image(
 
     for attempt in range(retries + 1):
         logger.info(
-            "TG.7.4.01 image_mode=%s attempt=%s session_id=%s step_ui=%s reference_asset_id=%s",
+            "TG.7.4.01 image_mode=%s attempt=%s session_id=%s step_ui=%s step0=%s reference_asset_id=%s",
             schedule.image_mode,
             attempt,
             session_id,
             step_ui,
+            step0,
             reference_asset_id,
         )
         try:

@@ -115,6 +115,7 @@ async def deliver_step_view(
         step_message_id=step_message.message_id,
         session_id=session_id,
         step_ui=step + 1,
+        step0=step,
         total_steps=total_steps,
         prompt=step_view.text,
         theme_id=theme_id,

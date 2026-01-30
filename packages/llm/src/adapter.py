@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -62,6 +63,12 @@ def _normalize_mock_mode() -> str:
         logger.warning("llm.adapter unknown mock_mode=%s fallback=ok", raw)
         return "ok"
     return raw
+
+
+def _safe_filename_component(value: str, fallback: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip())
+    cleaned = cleaned.strip("-_.")
+    return cleaned or fallback
 
 
 def generate(step_ctx: Dict[str, Any]) -> LLMResult:
@@ -285,9 +292,11 @@ def _dump_debug(
         return
     try:
         os.makedirs(dump_dir, exist_ok=True)
-        req_id = step_ctx.get("req_id") or "unknown"
+        req_id = _safe_filename_component(str(step_ctx.get("req_id") or ""), "unknown")
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        filename = f"{req_id}_{provider_name}_{expected_type}_{timestamp}.json"
+        provider_label = _safe_filename_component(provider_name, "provider")
+        expected_label = _safe_filename_component(expected_type, "expected")
+        filename = f"{req_id}_{provider_label}_{expected_label}_{timestamp}.json"
         path = os.path.join(dump_dir, filename)
         payload = {
             "req_id": req_id,

@@ -13,6 +13,7 @@ class WhyAnswer:
     text: str
     matched: bool
     matched_id: str | None
+    score: int
 
 
 class WhyQA:
@@ -38,7 +39,7 @@ class WhyQA:
         self._ensure_loaded()
         normalized = normalize_text(question)
         if not normalized:
-            return WhyAnswer(text=self._fallback(audience), matched=False, matched_id=None)
+            return WhyAnswer(text=self._fallback(audience), matched=False, matched_id=None, score=0)
 
         best_item: dict[str, object] | None = None
         best_score = 0
@@ -51,15 +52,20 @@ class WhyQA:
                 best_item = item
 
         if not best_item or best_score < 2:
-            return WhyAnswer(text=self._fallback(audience), matched=False, matched_id=None)
+            return WhyAnswer(text=self._fallback(audience), matched=False, matched_id=None, score=0)
 
         answer_key = "answer_kid" if audience == "kid" else "answer_adult"
         answer = best_item.get(answer_key)
         if not isinstance(answer, str) or not answer.strip():
-            return WhyAnswer(text=self._fallback(audience), matched=False, matched_id=None)
+            return WhyAnswer(text=self._fallback(audience), matched=False, matched_id=None, score=0)
 
         item_id = best_item.get("id")
-        return WhyAnswer(text=answer, matched=True, matched_id=item_id if isinstance(item_id, str) else None)
+        return WhyAnswer(
+            text=answer,
+            matched=True,
+            matched_id=item_id if isinstance(item_id, str) else None,
+            score=best_score,
+        )
 
     def _score_item(self, item: dict[str, object], normalized: str) -> tuple[int, int]:
         keywords = item.get("keywords")

@@ -1,0 +1,2 @@
+QUESTION: {question}
+Ответь строго по правилам SYSTEM.

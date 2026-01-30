@@ -54,3 +54,4 @@ YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINA
 2026-01-28 | TG.7.2.01 | DONE | LLM mock matrix + contract validation tests + expected_type + choices.len UX
 2026-01-28 | TG.7.3.01 | DONE | OpenRouter(Kimi) text provider v0.1 wired (secrets out of repo) + smoke step/final
 2026-01-29 | TG.3.2.02 | DONE | DB v0.2 assets + session_images (no base64 in Postgres)
+2026-01-30 | TG.7.5.01 | DONE | Why (Почемучка) v0.2: Q/A + LLM fallback (Kimi) + prompt pack + guardrails

@@ -55,6 +55,7 @@ def schedule_image_delivery(
     step_ui: int,
     total_steps: int,
     prompt: str,
+    theme_id: str | None = None,
 ) -> None:
     schedule = ImageSchedule(step_ui=step_ui, total_steps=total_steps)
     logger.info(
@@ -75,6 +76,7 @@ def schedule_image_delivery(
             step_ui=step_ui,
             total_steps=total_steps,
             prompt=prompt,
+            theme_id=theme_id,
         )
     )
 
@@ -88,6 +90,7 @@ async def _generate_and_send_image(
     step_ui: int,
     total_steps: int,
     prompt: str,
+    theme_id: str | None,
 ) -> None:
     schedule = ImageSchedule(step_ui=step_ui, total_steps=total_steps)
     if not schedule.needs_image:
@@ -97,24 +100,47 @@ async def _generate_and_send_image(
     retries = _resolve_retries()
     reference_asset_id = None
     reference_payload = None
-
-    if schedule.image_mode == "i2i":
-        reference_asset_id = await _wait_for_reference(session_id)
-        if reference_asset_id is None:
+    image_mode = schedule.image_mode
+    if schedule.image_mode == "t2i":
+        reference_asset_id = session_images.get_reference_asset_id(session_id)
+        if reference_asset_id is not None:
             logger.info(
-                "TG.7.4.01 image_outcome=skipped reason=missing_reference session_id=%s step_ui=%s",
+                "TG.7.4.01 image.reference exists session_id=%s step_ui=%s asset_id=%s",
                 session_id,
                 step_ui,
+                reference_asset_id,
             )
-            return
-        reference_payload = _load_reference(reference_asset_id)
+            reference_payload = _load_reference(reference_asset_id)
+            if reference_payload is not None:
+                await _send_existing_image(
+                    bot=bot,
+                    chat_id=chat_id,
+                    step_message_id=step_message_id,
+                    image_bytes=reference_payload.bytes,
+                    storage_key=_resolve_storage_key(reference_asset_id),
+                )
+                return
+            logger.warning(
+                "TG.7.4.01 image.reference missing_bytes session_id=%s step_ui=%s asset_id=%s",
+                session_id,
+                step_ui,
+                reference_asset_id,
+            )
+            reference_asset_id = None
+    else:
+        reference_asset_id = session_images.get_reference_asset_id(session_id)
+        if reference_asset_id is not None:
+            reference_payload = _load_reference(reference_asset_id)
         if reference_payload is None:
-            logger.info(
-                "TG.7.4.01 image_outcome=skipped reason=missing_reference session_id=%s step_ui=%s",
+            logger.warning(
+                "TG.7.4.01 image.reference missing session_id=%s step_ui=%s",
                 session_id,
                 step_ui,
             )
-            return
+            reference_asset_id = None
+            image_mode = "t2i"
+
+    prompt = _build_image_prompt(step_ui=step_ui, prompt=prompt, theme_id=theme_id)
 
     for attempt in range(retries + 1):
         logger.info(
@@ -126,7 +152,7 @@ async def _generate_and_send_image(
             reference_asset_id,
         )
         try:
-            if schedule.image_mode == "t2i":
+            if image_mode == "t2i":
                 image_bytes, mime, width, height, sha256 = generate_t2i(prompt)
             else:
                 image_bytes, mime, width, height, sha256 = generate_i2i(
@@ -164,6 +190,21 @@ async def _generate_and_send_image(
                 asset_id,
                 reference_asset_id,
             )
+            if role == "reference":
+                logger.info(
+                    "TG.7.4.01 image.reference created session_id=%s step_ui=%s asset_id=%s",
+                    session_id,
+                    step_ui,
+                    asset_id,
+                )
+            else:
+                logger.info(
+                    "TG.7.4.01 image.step_image created session_id=%s step_ui=%s asset_id=%s ref=%s",
+                    session_id,
+                    step_ui,
+                    asset_id,
+                    "yes" if reference_asset_id else "no",
+                )
             return
         except MissingOpenRouterKeyError:
             logger.info(
@@ -174,10 +215,11 @@ async def _generate_and_send_image(
             return
         except Exception as exc:  # noqa: BLE001
             logger.info(
-                "TG.7.4.01 image_outcome=failed attempt=%s session_id=%s step_ui=%s",
+                "TG.7.4.01 image_outcome=error attempt=%s session_id=%s step_ui=%s reason=%s",
                 attempt,
                 session_id,
                 step_ui,
+                str(exc),
                 exc_info=exc,
             )
             if attempt >= retries:
@@ -204,6 +246,52 @@ def _load_reference(asset_id: int) -> ReferencePayload | None:
     if not path.exists():
         return None
     return ReferencePayload(bytes=path.read_bytes(), mime=mime)
+
+
+async def _send_existing_image(
+    *,
+    bot: Bot,
+    chat_id: int,
+    step_message_id: int,
+    image_bytes: bytes,
+    storage_key: str,
+) -> None:
+    await bot.send_photo(
+        chat_id=chat_id,
+        photo=BufferedInputFile(image_bytes, filename=storage_key),
+        caption="Иллюстрация",
+        reply_to_message_id=step_message_id,
+    )
+
+
+def _resolve_storage_key(asset_id: int) -> str:
+    asset_row = assets.get_by_id(asset_id)
+    storage_key = asset_row.get("storage_key") if asset_row else None
+    if isinstance(storage_key, str) and storage_key:
+        return storage_key
+    return f"{_ASSETS_IMAGE_DIR}/reference_{asset_id}.png"
+
+
+def _build_reference_prompt(theme_id: str | None) -> str:
+    theme_hint = theme_id or "универсальный стиль"
+    return (
+        "Детская книжная иллюстрация, единый стиль серии: "
+        f"{theme_hint}. Без текста на изображении, без логотипов и водяных знаков, "
+        "мягкие формы, чистый фон."
+    )
+
+
+def _build_step_prompt(scene_text: str) -> str:
+    return (
+        "Детская книжная иллюстрация по сцене: "
+        f"{scene_text}. Без текста на изображении, без логотипов и водяных знаков."
+    )
+
+
+def _build_image_prompt(*, step_ui: int, prompt: str, theme_id: str | None) -> str:
+    if step_ui == 1:
+        return _build_reference_prompt(theme_id)
+    return _build_step_prompt(prompt)
 
 
 async def _wait_for_reference(

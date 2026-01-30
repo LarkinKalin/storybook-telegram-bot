@@ -41,15 +41,6 @@ def test_validator_requires_recap_short():
     assert "recap_short" in detail["missing_fields"]
 
 
-def test_validator_requires_recap_short():
-    parsed, reason = validate_response(
-        "{\"text\": \"ok\", \"choices\": [{\"choice_id\": \"A\", \"label\": \"A\"}]}",
-        "story_step",
-    )
-    assert parsed is None
-    assert reason == "missing_required_fields"
-
-
 def test_validator_story_final_allows_empty_choices():
     parsed, reason, detail = validate_response(
         "{\"text\": \"ok\", \"choices\": []}", "story_final"

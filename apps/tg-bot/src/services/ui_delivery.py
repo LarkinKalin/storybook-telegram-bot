@@ -117,6 +117,7 @@ async def deliver_step_view(
         step_ui=step + 1,
         total_steps=total_steps,
         prompt=step_view.text,
+        theme_id=theme_id,
     )
     logger.info("TG.6.4.07 delivery=sent msg_id=%s", step_message.message_id)
     return True

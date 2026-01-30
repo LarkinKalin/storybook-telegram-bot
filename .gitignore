@@ -6,6 +6,7 @@
 backups/
 *.log
 var/
+apps/tg-bot/var/why_dumps/
 
 # python
 __pycache__/

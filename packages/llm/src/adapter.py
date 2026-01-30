@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import traceback
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -150,6 +151,8 @@ def _generate_with_provider(
     last_native_finish_reason: str | None = None
     last_request_payload: Dict[str, Any] | None = None
     last_response_payload: Dict[str, Any] | None = None
+    last_error_detail: str | None = None
+    last_traceback: str | None = None
 
     attempt = 1
     while True:
@@ -162,6 +165,8 @@ def _generate_with_provider(
             last_native_finish_reason = getattr(provider, "last_native_finish_reason", None)
         except Exception as exc:  # noqa: BLE001
             last_error_class = type(exc).__name__
+            last_error_detail = str(exc)
+            last_traceback = traceback.format_exc()
             if isinstance(exc, TimeoutError):
                 last_error_reason = "timeout"
             elif isinstance(exc, url_error.HTTPError):
@@ -174,7 +179,7 @@ def _generate_with_provider(
                     last_error_reason = f"provider_http_{status_code}"
             else:
                 last_error_reason = "exception"
-            logger.info(
+            logger.exception(
                 "llm.adapter provider=%s expected=%s attempt=%s outcome=error",
                 provider_name,
                 expected_type,
@@ -189,6 +194,8 @@ def _generate_with_provider(
         if error_reason:
             last_error_class = "validation_error"
             last_error_reason = error_reason
+            last_error_detail = None
+            last_traceback = None
             logger.info(
                 "llm.validator expected=%s outcome=%s",
                 expected_type,
@@ -218,6 +225,8 @@ def _generate_with_provider(
             raw_text=last_raw_text,
             usage=last_usage,
             error_reason=None,
+            error_detail=None,
+            error_traceback=None,
             finish_reason=last_finish_reason,
             native_finish_reason=last_native_finish_reason,
             request=last_request_payload,
@@ -245,6 +254,8 @@ def _generate_with_provider(
         raw_text=last_raw_text,
         usage=last_usage,
         error_reason=last_error_reason,
+        error_detail=last_error_detail,
+        error_traceback=last_traceback,
         finish_reason=last_finish_reason,
         native_finish_reason=last_native_finish_reason,
         request=last_request_payload,
@@ -279,6 +290,8 @@ def _dump_debug(
     raw_text: str,
     usage: Dict[str, Any] | None,
     error_reason: str | None,
+    error_detail: str | None,
+    error_traceback: str | None,
     finish_reason: str | None,
     native_finish_reason: str | None,
     request: Dict[str, Any] | None = None,
@@ -315,6 +328,8 @@ def _dump_debug(
             "engine_input": engine_input,
             "engine_output": engine_output,
             "error_reason": error_reason,
+            "error_detail": error_detail,
+            "traceback": error_traceback,
             "raw_text": raw_text,
             "parsed_json": parsed_json,
             "usage": usage,

@@ -9,7 +9,14 @@ from pathlib import Path
 class PromptLoadResult:
     text: str
     source: str
-    path: Path | None
+    path: str
+
+
+class PromptNotFoundError(FileNotFoundError):
+    def __init__(self, paths: list[Path]) -> None:
+        self.paths = paths
+        searched = "\n".join(str(path) for path in paths)
+        super().__init__(f"prompt files not found, tried:\n{searched}")
 
 
 def load_system_prompt(expected_type: str, theme_id: str | None) -> str:
@@ -29,8 +36,8 @@ def load_system_prompt_with_source(
         except OSError:
             continue
         if text:
-            return PromptLoadResult(text=text, source=f"file:{path}", path=path)
-    return PromptLoadResult(text="", source="missing", path=None)
+            return PromptLoadResult(text=text, source="file", path=str(path))
+    raise PromptNotFoundError(prompt_paths)
 
 
 def _build_prompt_paths(expected_type: str, theme_id: str | None) -> list[Path]:

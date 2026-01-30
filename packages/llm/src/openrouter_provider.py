@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 
 import requests
 
-from packages.llm.src.prompt_loader import load_system_prompt_with_source
+from packages.llm.src.prompt_loader import PromptNotFoundError, load_system_prompt_with_source
 
 class MissingOpenRouterKeyError(ValueError):
     pass
@@ -36,7 +36,13 @@ class OpenRouterProvider:
         theme_id = step_ctx.get("theme_id")
         max_tokens = self._resolve_max_tokens(expected_type)
         timeout_s = self._resolve_timeout()
-        messages = self._resolve_messages(step_ctx)
+        theme_config = self._resolve_theme_config(theme_id)
+        if theme_config.max_tokens_step is not None or theme_config.max_tokens_final is not None:
+            max_tokens = self._resolve_theme_max_tokens(expected_type, theme_config, max_tokens)
+        temperature = self._resolve_temperature(expected_type)
+        if theme_config.temperature_step is not None or theme_config.temperature_final is not None:
+            temperature = self._resolve_theme_temperature(expected_type, theme_config, temperature)
+        messages = self._resolve_messages(step_ctx, theme_config)
         response_format = self._build_response_format(expected_type)
         reasoning = self._resolve_reasoning()
 
@@ -116,12 +122,22 @@ class OpenRouterProvider:
             user_content: str = json.dumps(story_request, ensure_ascii=False)
         else:
             user_content = "" if story_request is None else str(story_request)
-        system_prompt = "Верни только JSON. Без markdown. Без пояснений."
-        if step_ctx.get("expected_type") == "story_final":
-            system_prompt = (
-                "Верни только JSON. Без markdown. Без пояснений. "
-                "Финал должен быть кратким (1-3 предложения)."
+        try:
+            prompt_result = load_system_prompt_with_source(
+                str(step_ctx.get("expected_type") or ""),
+                theme_id=step_ctx.get("theme_id") if isinstance(step_ctx.get("theme_id"), str) else None,
             )
+        except PromptNotFoundError as exc:
+            step_ctx["prompt_source"] = "file"
+            step_ctx["prompt_path"] = str(exc.paths[0]) if exc.paths else None
+            raise
+        system_prompt = prompt_result.text
+        self.last_prompt_source = prompt_result.source
+        self.last_prompt_path = prompt_result.path
+        step_ctx["prompt_source"] = self.last_prompt_source
+        step_ctx["prompt_path"] = self.last_prompt_path
+        if not system_prompt.strip():
+            raise ValueError(f"empty system prompt: {self.last_prompt_path}")
         return [
             {
                 "role": "system",
@@ -146,6 +162,20 @@ class OpenRouterProvider:
             return int(raw)
         except ValueError:
             return None
+
+    def _resolve_temperature(self, expected_type: Any) -> float:
+        if expected_type == "story_final":
+            raw = os.getenv("OPENROUTER_TEMPERATURE_FINAL", "").strip()
+        else:
+            raw = os.getenv("OPENROUTER_TEMPERATURE_STEP", "").strip()
+        if not raw:
+            raw = os.getenv("OPENROUTER_TEMPERATURE", "").strip()
+        if not raw:
+            raw = "0.5" if expected_type == "story_final" else "0.6"
+        try:
+            return float(raw)
+        except ValueError:
+            return 0.5
 
     def _resolve_timeout(self) -> float:
         raw = os.getenv("OPENROUTER_TIMEOUT_S", "30").strip()
@@ -228,3 +258,100 @@ class OpenRouterProvider:
         if os.getenv("OPENROUTER_RESPONSE_HEALING", "").strip() != "1":
             return []
         return [{"id": "response-healing"}]
+
+    def _resolve_theme_max_tokens(
+        self,
+        expected_type: Any,
+        theme_config: "_ThemeConfig",
+        fallback: int | None,
+    ) -> int | None:
+        if expected_type == "story_final" and theme_config.max_tokens_final is not None:
+            return theme_config.max_tokens_final
+        if expected_type != "story_final" and theme_config.max_tokens_step is not None:
+            return theme_config.max_tokens_step
+        return fallback
+
+    def _resolve_theme_temperature(
+        self,
+        expected_type: Any,
+        theme_config: "_ThemeConfig",
+        fallback: float,
+    ) -> float:
+        if expected_type == "story_final" and theme_config.temperature_final is not None:
+            return theme_config.temperature_final
+        if expected_type != "story_final" and theme_config.temperature_step is not None:
+            return theme_config.temperature_step
+        return fallback
+
+    def _resolve_theme_config(self, theme_id: Any) -> "_ThemeConfig":
+        if not isinstance(theme_id, str) or not theme_id:
+            return _ThemeConfig()
+        base_dir = _resolve_theme_config_dir()
+        json_path = base_dir / f"{theme_id}.json"
+        if json_path.exists():
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+            except OSError:
+                return _ThemeConfig()
+            return _ThemeConfig.from_payload(data)
+        return _ThemeConfig()
+
+
+class _ThemeConfig:
+    def __init__(
+        self,
+        *,
+        system_prompt_step: str | None = None,
+        system_prompt_final: str | None = None,
+        temperature_step: float | None = None,
+        temperature_final: float | None = None,
+        max_tokens_step: int | None = None,
+        max_tokens_final: int | None = None,
+    ) -> None:
+        self.system_prompt_step = system_prompt_step
+        self.system_prompt_final = system_prompt_final
+        self.temperature_step = temperature_step
+        self.temperature_final = temperature_final
+        self.max_tokens_step = max_tokens_step
+        self.max_tokens_final = max_tokens_final
+
+    @classmethod
+    def from_payload(cls, payload: Dict[str, Any]) -> "_ThemeConfig":
+        return cls(
+            system_prompt_step=_as_str(payload.get("system_prompt_step")),
+            system_prompt_final=_as_str(payload.get("system_prompt_final")),
+            temperature_step=_as_float(payload.get("temperature_step")),
+            temperature_final=_as_float(payload.get("temperature_final")),
+            max_tokens_step=_as_int(payload.get("max_tokens_step")),
+            max_tokens_final=_as_int(payload.get("max_tokens_final")),
+        )
+
+
+def _as_str(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _as_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_theme_config_dir() -> Path:
+    content_dir = os.getenv("SKAZKA_CONTENT_DIR", "").strip()
+    if content_dir:
+        return Path(content_dir) / "prompts"
+    prompts_dir = os.getenv("PROMPTS_DIR", "").strip()
+    if prompts_dir:
+        return Path(prompts_dir)
+    return Path("/app/content/prompts")

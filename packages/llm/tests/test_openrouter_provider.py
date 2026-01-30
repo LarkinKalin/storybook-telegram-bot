@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from packages.llm.src.openrouter_provider import OpenRouterProvider
 
 
@@ -49,7 +51,7 @@ def test_openrouter_payload_schema(monkeypatch):
     assert payload["messages"][0]["role"] == "system"
     assert "ДУГА НА 8 ШАГОВ" in payload["messages"][0]["content"]
     assert "400–800" in payload["messages"][0]["content"]
-    assert provider.last_prompt_source.startswith("file:")
+    assert provider.last_prompt_source == "file"
     assert provider.last_prompt_path.endswith("content/prompts/story_step/default.txt")
 
 
@@ -59,6 +61,8 @@ def test_openrouter_content_dict(monkeypatch):
     def fake_post(*_args, **_kwargs):
         return DummyResponse(payload)
 
+    repo_root = Path(__file__).resolve().parents[3]
+    monkeypatch.setenv("SKAZKA_CONTENT_DIR", str(repo_root / "content"))
     monkeypatch.setattr("packages.llm.src.openrouter_provider.requests.post", fake_post)
     provider = OpenRouterProvider("key")
     result = provider.generate({"expected_type": "story_step"})
@@ -71,6 +75,8 @@ def test_openrouter_content_string_json(monkeypatch):
     def fake_post(*_args, **_kwargs):
         return DummyResponse(payload)
 
+    repo_root = Path(__file__).resolve().parents[3]
+    monkeypatch.setenv("SKAZKA_CONTENT_DIR", str(repo_root / "content"))
     monkeypatch.setattr("packages.llm.src.openrouter_provider.requests.post", fake_post)
     provider = OpenRouterProvider("key")
     result = provider.generate({"expected_type": "story_final"})
@@ -83,7 +89,51 @@ def test_openrouter_content_string_invalid(monkeypatch):
     def fake_post(*_args, **_kwargs):
         return DummyResponse(payload)
 
+    repo_root = Path(__file__).resolve().parents[3]
+    monkeypatch.setenv("SKAZKA_CONTENT_DIR", str(repo_root / "content"))
     monkeypatch.setattr("packages.llm.src.openrouter_provider.requests.post", fake_post)
     provider = OpenRouterProvider("key")
     result = provider.generate({"expected_type": "story_final"})
     assert result == "not-json"
+
+
+def test_openrouter_theme_prompt_fallback(monkeypatch):
+    captured = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return DummyResponse({"choices": [{"message": {"content": {"text": "ok", "choices": []}}}]})
+
+    repo_root = Path(__file__).resolve().parents[3]
+    monkeypatch.setenv("SKAZKA_CONTENT_DIR", str(repo_root / "content"))
+    monkeypatch.setattr("packages.llm.src.openrouter_provider.requests.post", fake_post)
+
+    provider = OpenRouterProvider("key")
+    provider.generate(
+        {
+            "expected_type": "story_step",
+            "theme_id": "missing_theme",
+            "story_request": {"text": "hi"},
+        }
+    )
+
+    system_prompt = captured["json"]["messages"][0]["content"]
+    assert "ДУГА НА 8 ШАГОВ" in system_prompt
+    assert provider.last_prompt_path.endswith("content/prompts/story_step/default.txt")
+
+
+def test_openrouter_missing_prompts(monkeypatch, tmp_path):
+    def fake_post(*_args, **_kwargs):
+        raise AssertionError("request should not be sent")
+
+    monkeypatch.setenv("SKAZKA_CONTENT_DIR", str(tmp_path / "content"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("packages.llm.src.openrouter_provider.requests.post", fake_post)
+
+    provider = OpenRouterProvider("key")
+    with pytest.raises(FileNotFoundError) as excinfo:
+        provider.generate({"expected_type": "story_step", "story_request": {"text": "hi"}})
+
+    message = str(excinfo.value)
+    assert "prompt files not found" in message
+    assert "story_step" in message

@@ -313,7 +313,7 @@ async def _deliver_current_step(
     state: FSMContext,
     session: object,
 ) -> None:
-    step_view = render_current_step(session.__dict__)
+    step_view = render_current_step(session.__dict__, req_id=_req_id_from_update(message, None))
     await deliver_step_view(
         message=message,
         step_view=step_view,
@@ -362,7 +362,7 @@ async def _continue_current(
             session.step,
         )
         return
-    step_view = render_current_step(session.__dict__)
+    step_view = render_current_step(session.__dict__, req_id=_req_id_from_update(message, None))
     step_text = step_view.text
     sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
     step_message = sent_message

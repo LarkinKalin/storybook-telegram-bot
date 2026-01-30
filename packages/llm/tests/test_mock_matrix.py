@@ -19,6 +19,7 @@ def test_ok_step_variants(monkeypatch, mode, expected_len):
     assert result.used_fallback is False
     assert result.parsed_json is not None
     assert len(result.parsed_json.get("choices", [])) == expected_len
+    assert isinstance(result.parsed_json.get("recap_short"), str)
 
 
 def test_ok_final(monkeypatch):

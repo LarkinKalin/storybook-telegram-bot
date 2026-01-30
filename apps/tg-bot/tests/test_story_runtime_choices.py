@@ -25,7 +25,9 @@ def test_step_result_uses_llm_choices() -> None:
     step_result = build_step_result(session_row, state=state, req_id="test")
     labels = [choice["label"] for choice in step_result["choices"]]
     assert step_result["choices_source"] == "llm"
-    assert any("Смелый путь" in label for label in labels)
+    assert any("Повернуть к реке" in label for label in labels)
     view = step_result_to_view(step_result, sid8="sid", step=0)
-    assert "Выбор:" in view.text
+    assert "Варианты:" in view.text
     assert "A)" in view.text
+    banned = {"мудрость", "доброта", "смелость"}
+    assert not any(any(word in label.lower() for word in banned) for label in labels)

@@ -16,6 +16,7 @@ class L3ApplyPayload:
     deltas_json: dict[str, Any] | None
     step_result_json: dict[str, Any] | None
     meta_json: dict[str, Any] | None
+    facts_json: dict[str, Any] | None
     finish_status: str | None
     final_id: str | None
     final_meta: dict[str, Any] | None
@@ -138,6 +139,8 @@ def apply_l3_turn_atomic(
         )
         sessions.update_params_json_in_tx(conn, session_row["id"], payload.new_state)
         sessions.update_step_in_tx(conn, session_row["id"], payload.new_state["step0"])
+        if payload.facts_json is not None:
+            sessions.update_facts_json_in_tx(conn, session_row["id"], payload.facts_json)
 
         if payload.final_id:
             sessions.finish_with_final_in_tx(

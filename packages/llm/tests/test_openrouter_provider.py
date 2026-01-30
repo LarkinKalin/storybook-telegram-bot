@@ -23,7 +23,9 @@ def test_openrouter_payload_schema(monkeypatch):
         captured["headers"] = headers
         captured["json"] = json
         captured["timeout"] = timeout
-        return DummyResponse({"choices": [{"message": {"content": {"text": "ok", "choices": []}}}]})
+        return DummyResponse(
+            {"choices": [{"message": {"content": {"text": "ok", "recap_short": "recap", "choices": []}}}]}
+        )
 
     monkeypatch.setenv("OPENROUTER_MODEL_TEXT", "moonshotai/kimi-k2.5")
     monkeypatch.setenv("OPENROUTER_TIMEOUT_S", "12")
@@ -38,6 +40,7 @@ def test_openrouter_payload_schema(monkeypatch):
     payload = captured["json"]
     assert payload["response_format"]["type"] == "json_schema"
     schema = payload["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["recap_short"]["type"] == "string"
     assert schema["properties"]["choices"]["maxItems"] == 3
     assert {"id": "response-healing"} in payload["plugins"]
 

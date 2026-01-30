@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+import copy
 from typing import Any, Dict, Literal
 
 from db.repos import l3_turns
@@ -82,6 +83,7 @@ def apply_l3_turn(
             state = init_state_v01(session_row.get("max_steps", 8))
         else:
             state = params
+        state_before = copy.deepcopy(state)
         content = build_content_step(session_row["theme_id"], state["step0"], state)
         new_state, step_log = apply_turn(state, turn, content)
         turn_kind = turn.get("kind", "")
@@ -112,10 +114,41 @@ def apply_l3_turn(
         final_meta = step_log["final_meta"] or {}
         if final_id is None and new_state["step0"] >= new_state["n"] - 1:
             finish_status = "FINISHED"
+        facts_json = session_row.get("facts_json") or {}
+        if not isinstance(facts_json, dict):
+            facts_json = {}
+        recaps = facts_json.get("recaps")
+        if not isinstance(recaps, list):
+            recaps = []
+        recap_short = None
+        if isinstance(step_result_json, dict):
+            recap_short = step_result_json.get("recap_short")
+        if isinstance(recap_short, str) and recap_short.strip():
+            recaps.append({"step": state_before["step0"], "recap": recap_short.strip()})
+        recaps = recaps[-5:]
+        facts_json["recaps"] = recaps
+        if turn.get("choice_id"):
+            facts_json["last_choice"] = {"choice_id": turn.get("choice_id")}
+        engine_snapshot = {
+            "step": state_before["step0"],
+            "choice_id": turn.get("choice_id"),
+            "state_before": state_before,
+            "state_after": new_state,
+            "milestone_id": step_log.get("milestone_id"),
+            "final_id": step_log.get("final_id"),
+        }
+        history = facts_json.get("engine_history")
+        if not isinstance(history, list):
+            history = []
+        history.append(engine_snapshot)
+        facts_json["engine_history"] = history[-5:]
+        facts_json["last_engine_output"] = engine_snapshot
         meta_json = {
             "turn_fingerprint": fingerprint,
             "source_message_id": source_message_id,
             "req_id": req_id,
+            "engine_input": state_before,
+            "engine_output": facts_json.get("last_engine_output"),
         }
         return l3_turns.L3ApplyPayload(
             new_state=new_state,
@@ -123,6 +156,7 @@ def apply_l3_turn(
             deltas_json=deltas_json,
             step_result_json=step_result_json,
             meta_json=meta_json,
+            facts_json=facts_json,
             finish_status=finish_status,
             final_id=final_id,
             final_meta=final_meta,
@@ -175,7 +209,7 @@ def apply_l3_turn(
                 step=st2,
             )
         else:
-            step_view = render_current_step(result.session_row)
+            step_view = render_current_step(result.session_row, req_id=req_id)
         final_id = step_view.final_id
         return L3TurnResult(
             status="duplicate",

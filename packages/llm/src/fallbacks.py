@@ -11,10 +11,11 @@ def build_fallback(expected_type: str) -> Dict[str, Any]:
         }
     return {
         "text": "Сцена временно недоступна. Выберите действие ниже.",
+        "recap_short": "Шаг временно недоступен, история продолжится дальше.",
         "choices": [
-            {"choice_id": "A", "label": "A — Продолжить"},
-            {"choice_id": "B", "label": "B — Попробовать снова"},
-            {"choice_id": "C", "label": "C — Завершить"},
+            {"choice_id": "A", "label": "A"},
+            {"choice_id": "B", "label": "B"},
+            {"choice_id": "C", "label": "C"},
         ],
         "memory": None,
     }

@@ -265,6 +265,20 @@ def update_facts_json(session_id: int, facts_json: dict[str, Any]) -> None:
             )
 
 
+def update_facts_json_in_tx(
+    conn: Connection, session_id: int, facts_json: dict[str, Any]
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE sessions
+            SET facts_json = %s, updated_at = now()
+            WHERE id = %s;
+            """,
+            (to_json(facts_json), session_id),
+        )
+
+
 def finish_with_final(
     session_id: int,
     final_id: str,

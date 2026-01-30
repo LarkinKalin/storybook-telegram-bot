@@ -57,6 +57,9 @@ def main() -> int:
     parsed_json = payload.get("parsed_json") or {}
     print("\nparsed_json.text:")
     print(_preview_content(parsed_json.get("text"), args.full))
+    if parsed_json.get("recap_short"):
+        print("\nparsed_json.recap_short:")
+        print(_preview_content(parsed_json.get("recap_short"), args.full))
 
     choices = parsed_json.get("choices") or []
     if isinstance(choices, list):
@@ -74,6 +77,14 @@ def main() -> int:
         f"total_tokens={usage.get('total_tokens')} "
         f"cost={usage.get('cost')}"
     )
+    engine_input = payload.get("engine_input")
+    engine_output = payload.get("engine_output")
+    if engine_input is not None:
+        print("\nengine_input:")
+        print(_preview_content(engine_input, args.full))
+    if engine_output is not None:
+        print("\nengine_output:")
+        print(_preview_content(engine_output, args.full))
     return 0
 
 

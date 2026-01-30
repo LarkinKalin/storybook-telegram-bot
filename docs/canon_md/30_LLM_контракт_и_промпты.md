@@ -254,9 +254,13 @@ LLM runtime contract (факт)
 
 2) Что получаем
 - JSON-only ответ:
-  - story_step: {"text":"...","choices":[{"choice_id":"A","label":"..."}]}
+  - story_step: {"text":"...","recap_short":"...","choices":[{"choice_id":"A","label":"..."}]}
   - story_final: {"text":"..."}
 - Кнопки в Telegram строятся из parsed_json.choices (label + choice_id).
+
+3) Связность и состояние (факт)
+- Вход story_request включает recaps (последние 3–5), last_choice и state (traits/milestones).
+- recap_short обязателен в каждом story_step и сохраняется для следующего шага.
 
 3) Отладка и дампы
 - Дампы: var/llm_dumps/*.json (на хосте: /srv/git/skazka/var/llm_dumps).

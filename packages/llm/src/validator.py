@@ -35,7 +35,10 @@ def validate_response(raw_text: str, expected_type: str) -> Tuple[Dict[str, Any]
 
 def _validate_story_step(parsed: Dict[str, Any]) -> Tuple[bool, str]:
     text = parsed.get("text")
+    recap_short = parsed.get("recap_short")
     if not isinstance(text, str) or not text.strip():
+        return False, "missing_required_fields"
+    if not isinstance(recap_short, str) or not recap_short.strip():
         return False, "missing_required_fields"
     if "choices" not in parsed:
         return False, "missing_required_fields"

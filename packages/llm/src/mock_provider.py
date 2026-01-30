@@ -76,16 +76,18 @@ class MockProvider:
         if isinstance(step, int) and isinstance(total_steps, int):
             header = f"Шаг {step + 1}/{total_steps}."
         labels = [
-            ("A", "A — Смелый путь"),
-            ("B", "B — Осторожный путь"),
-            ("C", "C — Необычный путь"),
+            ("A", "A — Повернуть к реке"),
+            ("B", "B — Спрятаться в пещере"),
+            ("C", "C — Позвать друга"),
         ]
         choices = [
             {"choice_id": choice_id, "label": label}
             for choice_id, label in labels[: max(0, min(count, 3))]
         ]
+        recap_short = f"{header} Герой делает выбор и продвигается вперёд."
         payload = {
             "text": f"{header} Выберите действие героя:",
+            "recap_short": recap_short,
             "choices": choices,
             "memory": None,
             "expected_type": expected_type or step_ctx.get("expected_type"),
@@ -95,6 +97,7 @@ class MockProvider:
     def _build_schema_invalid(self, step_ctx: Dict[str, Any]) -> str:
         payload = {
             "text": "Неверный шаг.",
+            "recap_short": "Краткий пересказ шага для теста.",
             "choices": [
                 {"choice_id": "A", "label": "A — Раз"},
                 {"choice_id": "B", "label": "B — Два"},

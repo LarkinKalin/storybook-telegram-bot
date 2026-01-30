@@ -19,6 +19,14 @@ router = Router(name="l2")
 logger = logging.getLogger(__name__)
 
 
+def _req_id_from_update(message: Message | None, callback: CallbackQuery | None) -> str | None:
+    if callback and getattr(callback, "id", None):
+        return str(callback.id)
+    if message and getattr(message, "message_id", None):
+        return str(message.message_id)
+    return None
+
+
 async def _handle_db_error(message: Message, state: FSMContext) -> None:
     logger.exception("DB operation failed")
     await message.answer("⚠️ База данных временно недоступна. Попробуй позже.")
@@ -179,7 +187,7 @@ async def _start_theme_session(
     if not session:
         await _handle_db_error(message, state)
         return
-    step_view = render_step(session.__dict__)
+    step_view = render_step(session.__dict__, req_id=_req_id_from_update(message, None))
     step_text = step_view.text
     sent_message = await message.answer("...", reply_markup=ReplyKeyboardRemove())
     step_message = sent_message

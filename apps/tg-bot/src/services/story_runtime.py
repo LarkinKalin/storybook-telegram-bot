@@ -87,22 +87,26 @@ def build_step_result(
             req_id=req_id,
         )
     content = build_content_step(session_row["theme_id"], state["step0"], state)
+    facts_json = session_row.get("facts_json") or {}
+    recaps = facts_json.get("recaps") if isinstance(facts_json, dict) else None
+    if not isinstance(recaps, list):
+        recaps = []
+    recaps = recaps[-5:]
+    last_choice = facts_json.get("last_choice") if isinstance(facts_json, dict) else None
     choices = content["choices"]
     text_lines = [
         f"Шаг {state['step0'] + 1}/{state['n']}.",
         content["scene_text"],
-        "",
-        "Выбор:",
-        "\n".join(f"{choice['label']}" for choice in choices),
     ]
     keyboard_choices = [
-        {"choice_id": choice["choice_id"], "label": choice["label"]} for choice in choices
+        {"choice_id": choice["choice_id"], "label": choice["choice_id"]} for choice in choices
     ]
     step_result = {
         "text": "\n".join(text_lines),
         "choices": keyboard_choices,
         "allow_free_text": state["free_text_allowed_after"],
         "final_id": None,
+        "recap_short": _fallback_recap(content["scene_text"]),
         "choices_source": "stub",
     }
     step_ctx = {
@@ -112,18 +116,28 @@ def build_step_result(
         "step": state.get("step0"),
         "total_steps": state.get("n"),
         "allow_free_text": state.get("free_text_allowed_after"),
+        "engine_input": state,
+        "engine_output": facts_json.get("last_engine_output") if isinstance(facts_json, dict) else None,
         "story_request": {
             "expected_type": expected_type_for_step(state["step0"], state["n"]),
             "scene_text": content["scene_text"],
             "choices": [
-                {"choice_id": choice["choice_id"], "label": choice["label"]}
+                {"choice_id": choice["choice_id"], "label": choice["choice_id"]}
                 for choice in choices
             ],
             "allow_free_text": state.get("free_text_allowed_after"),
             "step": state.get("step0"),
             "total_steps": state.get("n"),
             "theme_id": session_row.get("theme_id"),
-            "format": "Верни JSON формата {text, choices[]}.",
+            "recaps": recaps,
+            "last_choice": last_choice,
+            "state": {
+                "traits": state.get("traits"),
+                "noise_streak": state.get("noise_streak"),
+                "free_text_allowed_after": state.get("free_text_allowed_after"),
+                "milestone_votes": state.get("milestone_votes"),
+            },
+            "format": "Верни JSON формата {text, recap_short, choices[]}.",
         },
     }
     llm_result = llm_generate(step_ctx)
@@ -131,6 +145,9 @@ def build_step_result(
         llm_text = llm_result.parsed_json.get("text")
         if isinstance(llm_text, str) and llm_text.strip():
             step_result["text"] = llm_text
+        recap_short = llm_result.parsed_json.get("recap_short")
+        if isinstance(recap_short, str) and recap_short.strip():
+            step_result["recap_short"] = recap_short.strip()
         llm_choices = []
         parsed_choices = llm_result.parsed_json.get("choices", [])
         if isinstance(parsed_choices, list):
@@ -166,7 +183,7 @@ def render_choices_block(choices: list[dict]) -> str:
             return (order.get(choice_id.upper(), 99), choice_id)
         return (99, "")
 
-    lines = ["Выбор:"]
+    lines = ["Варианты:"]
     for choice in sorted(choices, key=_sort_key):
         choice_id = choice.get("choice_id")
         label = choice.get("label")
@@ -177,6 +194,13 @@ def render_choices_block(choices: list[dict]) -> str:
     lines.append("")
     lines.append("(Можно выбрать A/B/C кнопками или написать свой вариант.)")
     return "\n".join(lines)
+
+
+def _fallback_recap(scene_text: str) -> str:
+    recap = scene_text.strip().replace("\n", " ")
+    if len(recap) > 220:
+        recap = recap[:220].rstrip()
+    return recap
 
 
 def step_result_to_view(step_result: Dict, sid8: str, step: int) -> StepView:
@@ -221,13 +245,13 @@ def step_result_to_view(step_result: Dict, sid8: str, step: int) -> StepView:
     return StepView(text=text, keyboard=keyboard, final_id=final_id)
 
 
-def render_current_step(session_row: Dict) -> StepView:
+def render_current_step(session_row: Dict, req_id: str | None = None) -> StepView:
     state = ensure_engine_state(session_row)
-    step_result = build_step_result(session_row, state=state)
+    step_result = build_step_result(session_row, state=state, req_id=req_id)
     return step_result_to_view(step_result, sid8=session_row["sid8"], step=state["step0"])
 
 
-def render_step(session_row: Dict, state: Dict | None = None) -> StepView:
+def render_step(session_row: Dict, state: Dict | None = None, *, req_id: str | None = None) -> StepView:
     state = state or ensure_engine_state(session_row)
-    step_result = build_step_result(session_row, state=state)
+    step_result = build_step_result(session_row, state=state, req_id=req_id)
     return step_result_to_view(step_result, sid8=session_row["sid8"], step=state["step0"])

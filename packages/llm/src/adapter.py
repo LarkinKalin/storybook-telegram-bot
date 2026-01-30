@@ -216,6 +216,8 @@ def _generate_with_provider(
             request=last_request_payload,
             response=last_response_payload,
             parsed_json=parsed_json,
+            engine_input=step_ctx.get("engine_input"),
+            engine_output=step_ctx.get("engine_output"),
         )
         return LLMResult(
             expected_type=expected_type,
@@ -241,6 +243,8 @@ def _generate_with_provider(
         request=last_request_payload,
         response=last_response_payload,
         parsed_json=fallback_json,
+        engine_input=step_ctx.get("engine_input"),
+        engine_output=step_ctx.get("engine_output"),
     )
     reason = last_error_reason or "unknown"
     logger.info(
@@ -273,6 +277,8 @@ def _dump_debug(
     request: Dict[str, Any] | None = None,
     response: Dict[str, Any] | None = None,
     parsed_json: Dict[str, Any] | None = None,
+    engine_input: Dict[str, Any] | None = None,
+    engine_output: Dict[str, Any] | None = None,
 ) -> None:
     dump_dir = os.getenv("LLM_DEBUG_DUMP_DIR", "").strip()
     if not dump_dir:
@@ -289,6 +295,8 @@ def _dump_debug(
             "expected_type": expected_type,
             "request": request,
             "response": response,
+            "engine_input": engine_input,
+            "engine_output": engine_output,
             "error_reason": error_reason,
             "raw_text": raw_text,
             "parsed_json": parsed_json,

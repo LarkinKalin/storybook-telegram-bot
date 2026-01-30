@@ -32,6 +32,7 @@ def test_openrouter_payload_schema(monkeypatch):
     monkeypatch.setenv("OPENROUTER_MAX_TOKENS_STEP", "64")
     monkeypatch.setenv("OPENROUTER_RESPONSE_FORMAT", "json_schema")
     monkeypatch.setenv("OPENROUTER_RESPONSE_HEALING", "1")
+    monkeypatch.setenv("LLM_PROMPT_DIR", "content/prompts")
     monkeypatch.setattr("packages.llm.src.openrouter_provider.requests.post", fake_post)
 
     provider = OpenRouterProvider("key")
@@ -43,6 +44,7 @@ def test_openrouter_payload_schema(monkeypatch):
     assert schema["properties"]["recap_short"]["type"] == "string"
     assert schema["properties"]["choices"]["maxItems"] == 3
     assert {"id": "response-healing"} in payload["plugins"]
+    assert payload["messages"][0]["role"] == "system"
 
 
 def test_openrouter_content_dict(monkeypatch):

@@ -262,6 +262,11 @@ LLM runtime contract (факт)
 - Вход story_request включает recaps (последние 3–5), last_choice и state (traits/milestones).
 - recap_short обязателен в каждом story_step и сохраняется для следующего шага.
 
-3) Отладка и дампы
+4) Промпты по theme_id
+- Канонические system prompts берутся из content/prompts/<theme_id>.txt (или .json с параметрами).
+- Если промпт темы не найден, используется content/prompts/default.txt.
+- В .json можно задать system_prompt_step/final, temperature_step/final, max_tokens_step/final.
+
+5) Отладка и дампы
 - Дампы: var/llm_dumps/*.json (на хосте: /srv/git/skazka/var/llm_dumps).
 - Просмотр: apps/tg-bot/scripts/llm_dump_show.sh (или llm_dump_show.py).

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+from uuid import uuid4
 from typing import Dict, Optional
 
 from db.repos import sessions
@@ -80,6 +81,7 @@ def build_step_result(
     req_id: str | None = None,
 ) -> Dict:
     state = state or ensure_engine_state(session_row)
+    req_id = _ensure_req_id(req_id)
     if state["step0"] >= state["n"] - 1:
         return build_final_step_result(
             final_id=None,
@@ -109,6 +111,13 @@ def build_step_result(
         "recap_short": _fallback_recap(content["scene_text"]),
         "choices_source": "stub",
     }
+    story_request = build_story_request(
+        theme_id=session_row.get("theme_id"),
+        state=state,
+        content=content,
+        recaps=recaps,
+        last_choice=last_choice,
+    )
     step_ctx = {
         "expected_type": expected_type_for_step(state["step0"], state["n"]),
         "req_id": req_id,
@@ -118,27 +127,9 @@ def build_step_result(
         "allow_free_text": state.get("free_text_allowed_after"),
         "engine_input": state,
         "engine_output": facts_json.get("last_engine_output") if isinstance(facts_json, dict) else None,
-        "story_request": {
-            "expected_type": expected_type_for_step(state["step0"], state["n"]),
-            "scene_text": content["scene_text"],
-            "choices": [
-                {"choice_id": choice["choice_id"], "label": choice["choice_id"]}
-                for choice in choices
-            ],
-            "allow_free_text": state.get("free_text_allowed_after"),
-            "step": state.get("step0"),
-            "total_steps": state.get("n"),
-            "theme_id": session_row.get("theme_id"),
-            "recaps": recaps,
-            "last_choice": last_choice,
-            "state": {
-                "traits": state.get("traits"),
-                "noise_streak": state.get("noise_streak"),
-                "free_text_allowed_after": state.get("free_text_allowed_after"),
-                "milestone_votes": state.get("milestone_votes"),
-            },
-            "format": "Верни JSON формата {text, recap_short, choices[]}.",
-        },
+        "last_choice": last_choice,
+        "recaps_count": len(recaps),
+        "story_request": story_request,
     }
     llm_result = llm_generate(step_ctx)
     if llm_result.parsed_json:
@@ -201,6 +192,43 @@ def _fallback_recap(scene_text: str) -> str:
     if len(recap) > 220:
         recap = recap[:220].rstrip()
     return recap
+
+
+def _ensure_req_id(req_id: str | None) -> str:
+    if req_id:
+        return req_id
+    return uuid4().hex
+
+
+def build_story_request(
+    *,
+    theme_id: str | None,
+    state: Dict,
+    content: Dict,
+    recaps: list,
+    last_choice: object,
+) -> Dict:
+    return {
+        "expected_type": expected_type_for_step(state["step0"], state["n"]),
+        "scene_text": content["scene_text"],
+        "choices": [
+            {"choice_id": choice["choice_id"], "label": choice["choice_id"]}
+            for choice in content["choices"]
+        ],
+        "allow_free_text": state.get("free_text_allowed_after"),
+        "step": state.get("step0"),
+        "total_steps": state.get("n"),
+        "theme_id": theme_id,
+        "recaps": recaps,
+        "last_choice": last_choice,
+        "state": {
+            "traits": state.get("traits"),
+            "noise_streak": state.get("noise_streak"),
+            "free_text_allowed_after": state.get("free_text_allowed_after"),
+            "milestone_votes": state.get("milestone_votes"),
+        },
+        "format": "Верни JSON формата {text, recap_short, choices[]}.",
+    }
 
 
 def step_result_to_view(step_result: Dict, sid8: str, step: int) -> StepView:

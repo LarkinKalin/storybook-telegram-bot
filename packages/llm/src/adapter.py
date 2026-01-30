@@ -293,6 +293,12 @@ def _dump_debug(
             "req_id": req_id,
             "provider": provider_name,
             "expected_type": expected_type,
+            "context": {
+                "step": step_ctx.get("step"),
+                "total_steps": step_ctx.get("total_steps"),
+                "last_choice": step_ctx.get("last_choice"),
+                "recaps_count": step_ctx.get("recaps_count"),
+            },
             "request": request,
             "response": response,
             "engine_input": engine_input,

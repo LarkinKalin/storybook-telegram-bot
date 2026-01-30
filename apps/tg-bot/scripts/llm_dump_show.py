@@ -45,6 +45,11 @@ def main() -> int:
     print(f"temperature: {request.get('temperature')}")
     print(f"max_tokens: {request.get('max_tokens')}")
     print(f"response_format: {response_format}")
+    context = payload.get("context") or {}
+    print(
+        f"context: step={context.get('step')} total_steps={context.get('total_steps')} "
+        f"last_choice={context.get('last_choice')} recaps_count={context.get('recaps_count')}"
+    )
 
     messages = request.get("messages") or []
     print(f"messages: {len(messages)}")

@@ -29,12 +29,11 @@ class ImageSchedule:
     step_ui: int
     total_steps: int
     step0: int | None = None
+    has_image_prompt: bool = False
 
     @property
     def needs_image(self) -> bool:
-        if self.step0 is not None:
-            return self.step0 in image_steps0(self.total_steps)
-        return self.step_ui in image_steps(self.total_steps)
+        return self.has_image_prompt and self.step_ui in image_steps(self.total_steps)
 
     @property
     def image_mode(self) -> str:
@@ -49,14 +48,6 @@ def image_steps(total_steps: int) -> set[int]:
     return {1}
 
 
-def image_steps0(total_steps: int) -> set[int]:
-    if total_steps >= 12:
-        return {0, 4, 8}
-    if total_steps >= 8:
-        return {0, 3, 7}
-    return {0}
-
-
 def schedule_image_delivery(
     *,
     bot: Bot,
@@ -68,15 +59,31 @@ def schedule_image_delivery(
     prompt: str,
     theme_id: str | None = None,
     step0: int | None = None,
+    image_prompt: str | None = None,
 ) -> None:
-    schedule = ImageSchedule(step_ui=step_ui, total_steps=total_steps, step0=step0)
+    step_ui = step0 + 1 if step0 is not None else step_ui
+    has_image_prompt = isinstance(image_prompt, str) and image_prompt.strip() != ""
+    schedule = ImageSchedule(
+        step_ui=step_ui,
+        total_steps=total_steps,
+        step0=step0,
+        has_image_prompt=has_image_prompt,
+    )
+    reason = "ok"
+    if not has_image_prompt:
+        reason = "missing_image_prompt"
+    elif step_ui not in image_steps(total_steps):
+        reason = "step_not_scheduled"
     logger.info(
-        "TG.7.4.01 needs_image=%s session_id=%s step_ui=%s step0=%s total_steps=%s",
+        "TG.7.4.01 needs_image=%s session_id=%s step_ui=%s step0=%s "
+        "has_image_prompt=%s total_steps=%s reason=%s",
         schedule.needs_image,
         session_id,
         step_ui,
         step0,
+        has_image_prompt,
         total_steps,
+        reason,
     )
     if not schedule.needs_image:
         return
@@ -91,6 +98,7 @@ def schedule_image_delivery(
             prompt=prompt,
             theme_id=theme_id,
             step0=step0,
+            image_prompt=image_prompt,
         )
     )
 
@@ -106,8 +114,16 @@ async def _generate_and_send_image(
     prompt: str,
     theme_id: str | None,
     step0: int | None,
+    image_prompt: str | None,
 ) -> None:
-    schedule = ImageSchedule(step_ui=step_ui, total_steps=total_steps, step0=step0)
+    step_ui = step0 + 1 if step0 is not None else step_ui
+    has_image_prompt = isinstance(image_prompt, str) and image_prompt.strip() != ""
+    schedule = ImageSchedule(
+        step_ui=step_ui,
+        total_steps=total_steps,
+        step0=step0,
+        has_image_prompt=has_image_prompt,
+    )
     if not schedule.needs_image:
         return
 
@@ -155,7 +171,12 @@ async def _generate_and_send_image(
             reference_asset_id = None
             image_mode = "t2i"
 
-    prompt = _build_image_prompt(step_ui=step_ui, prompt=prompt, theme_id=theme_id)
+    prompt = _build_image_prompt(
+        step_ui=step_ui,
+        prompt=prompt,
+        theme_id=theme_id,
+        image_prompt=image_prompt,
+    )
 
     for attempt in range(retries + 1):
         logger.info(
@@ -304,7 +325,15 @@ def _build_step_prompt(scene_text: str) -> str:
     )
 
 
-def _build_image_prompt(*, step_ui: int, prompt: str, theme_id: str | None) -> str:
+def _build_image_prompt(
+    *,
+    step_ui: int,
+    prompt: str,
+    theme_id: str | None,
+    image_prompt: str | None,
+) -> str:
+    if isinstance(image_prompt, str) and image_prompt.strip():
+        return image_prompt.strip()
     if step_ui == 1:
         return _build_reference_prompt(theme_id)
     return _build_step_prompt(prompt)

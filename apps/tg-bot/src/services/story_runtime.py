@@ -19,6 +19,7 @@ class StepView:
     text: str
     keyboard: object
     final_id: Optional[str] = None
+    image_prompt: Optional[str] = None
 
 
 def build_final_step_result(
@@ -110,6 +111,7 @@ def build_step_result(
         "final_id": None,
         "recap_short": _fallback_recap(content["scene_text"]),
         "choices_source": "stub",
+        "image_prompt": None,
     }
     story_request = build_story_request(
         theme_id=session_row.get("theme_id"),
@@ -156,6 +158,9 @@ def build_step_result(
             fallback_choices = keyboard_choices[:2] if len(keyboard_choices) >= 2 else []
             step_result["choices"] = fallback_choices
             step_result["choices_source"] = "fallback"
+        image_prompt = llm_result.parsed_json.get("image_prompt")
+        if isinstance(image_prompt, str) and image_prompt.strip():
+            step_result["image_prompt"] = image_prompt.strip()
     else:
         fallback_choices = keyboard_choices[:2] if len(keyboard_choices) >= 2 else []
         step_result["choices"] = fallback_choices
@@ -234,6 +239,7 @@ def build_story_request(
 def step_result_to_view(step_result: Dict, sid8: str, step: int) -> StepView:
     text = step_result.get("text") or ""
     final_id = step_result.get("final_id")
+    image_prompt = step_result.get("image_prompt")
     choices = step_result.get("choices") or []
     allow_free_text = bool(step_result.get("allow_free_text"))
     choices_source = step_result.get("choices_source") or "unknown"
@@ -270,7 +276,12 @@ def step_result_to_view(step_result: Dict, sid8: str, step: int) -> StepView:
             sid8=sid8,
             step=step,
         )
-    return StepView(text=text, keyboard=keyboard, final_id=final_id)
+    return StepView(
+        text=text,
+        keyboard=keyboard,
+        final_id=final_id,
+        image_prompt=image_prompt if isinstance(image_prompt, str) else None,
+    )
 
 
 def render_current_step(session_row: Dict, req_id: str | None = None) -> StepView:

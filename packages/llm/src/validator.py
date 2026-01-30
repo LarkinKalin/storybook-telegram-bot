@@ -42,6 +42,9 @@ def _validate_story_step(parsed: Dict[str, Any]) -> Tuple[bool, str]:
         return False, "missing_required_fields"
     if not isinstance(recap_short, str) or not recap_short.strip():
         return False, "missing_required_fields"
+    image_prompt = parsed.get("image_prompt")
+    if image_prompt is not None and not isinstance(image_prompt, str):
+        return False, "schema_invalid"
     if "choices" not in parsed:
         return False, "missing_required_fields"
     choices = parsed.get("choices")
@@ -96,6 +99,9 @@ def _build_validation_detail(
             missing_fields.append("recap_short")
         if "choices" not in parsed:
             missing_fields.append("choices")
+        image_prompt = parsed.get("image_prompt")
+        if image_prompt is not None and not isinstance(image_prompt, str):
+            invalid_fields.append("image_prompt:type")
         choices = parsed.get("choices")
         if choices is not None and not isinstance(choices, list):
             invalid_fields.append("choices:type")

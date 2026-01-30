@@ -201,6 +201,7 @@ class OpenRouterProvider:
                 "properties": {
                     "text": {"type": "string"},
                     "recap_short": {"type": "string"},
+                    "image_prompt": {"type": "string"},
                     "choices": {
                         "type": "array",
                         "maxItems": 3,

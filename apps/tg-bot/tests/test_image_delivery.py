@@ -56,12 +56,13 @@ def test_reference_image_created(monkeypatch):
             prompt="scene",
             theme_id="robot_world",
             step0=0,
+            image_prompt="Детская книжная иллюстрация про роботов.",
         )
     )
 
     assert captured["insert"]["role"] == "reference"
     assert captured["insert"]["step_ui"] == 1
-    assert "robot_world" in captured["insert"]["prompt"]
+    assert "иллюстрация" in captured["insert"]["prompt"]
     assert bot.sent
 
 
@@ -106,12 +107,13 @@ def test_step_image_uses_reference(monkeypatch):
             prompt="scene text",
             theme_id=None,
             step0=3,
+            image_prompt="Детская книжная иллюстрация по сцене.",
         )
     )
 
     assert captured["insert"]["role"] == "step_image"
     assert captured["insert"]["reference_asset_id"] == 999
-    assert "scene text" in captured["insert"]["prompt"]
+    assert "иллюстрация" in captured["insert"]["prompt"]
     assert bot.sent
 
 
@@ -153,6 +155,7 @@ def test_step_image_without_reference(monkeypatch):
             prompt="scene text",
             theme_id=None,
             step0=3,
+            image_prompt="Детская книжная иллюстрация по сцене.",
         )
     )
 
@@ -162,7 +165,7 @@ def test_step_image_without_reference(monkeypatch):
 
 
 def test_image_steps_with_step0():
-    schedule = image_delivery.ImageSchedule(step_ui=1, total_steps=8, step0=0)
+    schedule = image_delivery.ImageSchedule(step_ui=1, total_steps=8, step0=0, has_image_prompt=True)
     assert schedule.needs_image is True
-    schedule = image_delivery.ImageSchedule(step_ui=2, total_steps=8, step0=1)
+    schedule = image_delivery.ImageSchedule(step_ui=2, total_steps=8, step0=1, has_image_prompt=True)
     assert schedule.needs_image is False

@@ -97,6 +97,25 @@ def test_openrouter_content_string_invalid(monkeypatch):
     assert result == "not-json"
 
 
+def test_openrouter_story_final_prompt_load(monkeypatch):
+    captured = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return DummyResponse({"choices": [{"message": {"content": {"text": "ok"}}}]})
+
+    repo_root = Path(__file__).resolve().parents[3]
+    monkeypatch.setenv("SKAZKA_CONTENT_DIR", str(repo_root / "content"))
+    monkeypatch.setattr("packages.llm.src.openrouter_provider.requests.post", fake_post)
+
+    provider = OpenRouterProvider("key")
+    provider.generate({"expected_type": "story_final", "story_request": {"text": "hi"}})
+
+    system_prompt = captured["json"]["messages"][0]["content"]
+    assert "СТРОГИЙ ФОРМАТ ВЫХОДА story_final" in system_prompt
+    assert provider.last_prompt_path.endswith("content/prompts/story_final/default.txt")
+
+
 def test_openrouter_theme_prompt_fallback(monkeypatch):
     captured = {}
 

@@ -190,11 +190,13 @@ def _generate_with_provider(
                 continue
             break
 
-        parsed_json, error_reason = validate_response(last_raw_text, expected_type)
+        parsed_json, error_reason, validation_detail = validate_response(
+            last_raw_text, expected_type
+        )
         if error_reason:
             last_error_class = "validation_error"
             last_error_reason = error_reason
-            last_error_detail = None
+            last_error_detail = json.dumps(validation_detail, ensure_ascii=False)
             last_traceback = None
             logger.info(
                 "llm.validator expected=%s outcome=%s",

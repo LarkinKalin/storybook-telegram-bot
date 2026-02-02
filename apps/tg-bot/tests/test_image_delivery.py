@@ -60,7 +60,7 @@ def test_reference_image_created(monkeypatch):
         )
     )
 
-    assert captured["insert"]["role"] == "reference"
+    assert captured["insert"]["role"] == "step_image"
     assert captured["insert"]["step_ui"] == 1
     assert "иллюстрация" in captured["insert"]["prompt"]
     assert bot.sent

@@ -132,33 +132,7 @@ async def _generate_and_send_image(
     reference_asset_id = None
     reference_payload = None
     image_mode = schedule.image_mode
-    if schedule.image_mode == "t2i":
-        reference_asset_id = session_images.get_reference_asset_id(session_id)
-        if reference_asset_id is not None:
-            logger.info(
-                "TG.7.4.01 image.reference exists session_id=%s step_ui=%s asset_id=%s",
-                session_id,
-                step_ui,
-                reference_asset_id,
-            )
-            reference_payload = _load_reference(reference_asset_id)
-            if reference_payload is not None:
-                await _send_existing_image(
-                    bot=bot,
-                    chat_id=chat_id,
-                    step_message_id=step_message_id,
-                    image_bytes=reference_payload.bytes,
-                    storage_key=_resolve_storage_key(reference_asset_id),
-                )
-                return
-            logger.warning(
-                "TG.7.4.01 image.reference missing_bytes session_id=%s step_ui=%s asset_id=%s",
-                session_id,
-                step_ui,
-                reference_asset_id,
-            )
-            reference_asset_id = None
-    else:
+    if schedule.image_mode != "t2i":
         reference_asset_id = session_images.get_reference_asset_id(session_id)
         if reference_asset_id is not None:
             reference_payload = _load_reference(reference_asset_id)
@@ -204,7 +178,7 @@ async def _generate_and_send_image(
                 height=height,
                 sha256=sha256,
             )
-            role = "reference" if schedule.image_mode == "t2i" else "step_image"
+            role = "step_image"
             session_images.insert_session_image(
                 session_id=session_id,
                 step_ui=step_ui,
@@ -227,21 +201,13 @@ async def _generate_and_send_image(
                 asset_id,
                 reference_asset_id,
             )
-            if role == "reference":
-                logger.info(
-                    "TG.7.4.01 image.reference created session_id=%s step_ui=%s asset_id=%s",
-                    session_id,
-                    step_ui,
-                    asset_id,
-                )
-            else:
-                logger.info(
-                    "TG.7.4.01 image.step_image created session_id=%s step_ui=%s asset_id=%s ref=%s",
-                    session_id,
-                    step_ui,
-                    asset_id,
-                    "yes" if reference_asset_id else "no",
-                )
+            logger.info(
+                "TG.7.4.01 image.step_image created session_id=%s step_ui=%s asset_id=%s ref=%s",
+                session_id,
+                step_ui,
+                asset_id,
+                "yes" if reference_asset_id else "no",
+            )
             return
         except MissingOpenRouterKeyError:
             logger.info(

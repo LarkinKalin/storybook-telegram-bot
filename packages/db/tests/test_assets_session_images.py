@@ -57,7 +57,7 @@ def test_session_images_unique_role_per_step() -> None:
         pytest.skip("DB_URL not set")
     session_row = _create_session()
     asset_id = _create_asset("unique-role")
-    session_images.insert_session_image(
+    session_image_id = session_images.insert_session_image(
         session_id=session_row["id"],
         step_ui=1,
         asset_id=asset_id,
@@ -75,7 +75,7 @@ def test_session_images_unique_role_per_step() -> None:
         image_model="model",
         prompt="prompt",
     )
-    assert duplicate_id is None
+    assert duplicate_id == session_image_id
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(

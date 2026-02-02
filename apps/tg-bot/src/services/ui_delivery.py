@@ -109,6 +109,10 @@ async def deliver_step_view(
         sessions.update_last_step(session_id, step_message.message_id, int(time()))
     except Exception:
         return True
+    scene_brief = step_view.image_prompt
+    if not scene_brief:
+        normalized = _normalize_content(step_view.text)
+        scene_brief = normalized[:200] if normalized else None
     schedule_image_delivery(
         bot=message.bot,
         chat_id=step_message.chat.id,
@@ -118,7 +122,7 @@ async def deliver_step_view(
         total_steps=total_steps,
         prompt=step_view.text,
         theme_id=theme_id,
-        image_prompt=step_view.image_prompt,
+        image_scene_brief=scene_brief,
     )
     logger.info("TG.6.4.07 delivery=sent msg_id=%s", step_message.message_id)
     return True

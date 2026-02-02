@@ -10,7 +10,7 @@ from db.conn import transaction
 def insert_session_image(
     session_id: int,
     step_ui: int,
-    asset_id: int,
+    asset_id: int | None,
     role: str,
     reference_asset_id: int | None,
     image_model: str,
@@ -30,7 +30,12 @@ def insert_session_image(
                     prompt
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (session_id, step_ui, role) DO NOTHING
+                ON CONFLICT (session_id, step_ui, role) DO UPDATE
+                SET
+                    asset_id = COALESCE(EXCLUDED.asset_id, session_images.asset_id),
+                    reference_asset_id = COALESCE(EXCLUDED.reference_asset_id, session_images.reference_asset_id),
+                    image_model = EXCLUDED.image_model,
+                    prompt = EXCLUDED.prompt
                 RETURNING id;
                 """,
                 (

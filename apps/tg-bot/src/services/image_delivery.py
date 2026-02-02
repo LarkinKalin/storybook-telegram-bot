@@ -105,6 +105,22 @@ def schedule_image_delivery(
             step_ui,
         )
         return
+    image_model = os.getenv("OPENROUTER_MODEL_IMAGE", "black-forest-labs/flux.2-pro").strip()
+    scheduled_id = session_images.insert_session_image(
+        session_id=session_id,
+        step_ui=step_ui,
+        asset_id=None,
+        role="step_image",
+        reference_asset_id=None,
+        image_model=image_model,
+        prompt=image_scene_brief.strip() if isinstance(image_scene_brief, str) else prompt,
+    )
+    logger.info(
+        "TG.7.4.01 image_scheduled session_id=%s step_ui=%s session_image_id=%s",
+        session_id,
+        step_ui,
+        scheduled_id,
+    )
     asyncio.create_task(
         _generate_and_send_image(
             bot=bot,
@@ -167,8 +183,9 @@ async def _generate_and_send_image(
         step_ui=step_ui,
         prompt=prompt,
         theme_id=theme_id,
-        image_prompt=image_prompt,
+        image_scene_brief=image_scene_brief,
     )
+    logger.info("TG.7.4.01 image_provider_called provider=openrouter")
 
     for attempt in range(retries + 1):
         logger.info(
@@ -213,7 +230,7 @@ async def _generate_and_send_image(
                 reply_to_message_id=step_message_id,
             )
             logger.info(
-                "TG.7.4.01 image_outcome=ok session_id=%s step_ui=%s asset_id=%s reference_asset_id=%s",
+                "TG.7.4.01 image_outcome outcome=ok reason=provider_success session_id=%s step_ui=%s asset_id=%s reference_asset_id=%s",
                 session_id,
                 step_ui,
                 asset_id,
@@ -229,21 +246,20 @@ async def _generate_and_send_image(
             return
         except MissingOpenRouterKeyError:
             logger.info(
-                "TG.7.4.01 image_outcome=skipped reason=missing_api_key session_id=%s step_ui=%s",
+                "TG.7.4.01 image_outcome outcome=error reason=missing_api_key session_id=%s step_ui=%s",
                 session_id,
                 step_ui,
             )
             return
         except Exception as exc:  # noqa: BLE001
-            logger.info(
-                "TG.7.4.01 image_outcome=error attempt=%s session_id=%s step_ui=%s reason=%s",
-                attempt,
-                session_id,
-                step_ui,
-                str(exc),
-                exc_info=exc,
-            )
             if attempt >= retries:
+                logger.info(
+                    "TG.7.4.01 image_outcome outcome=error reason=%s session_id=%s step_ui=%s",
+                    str(exc),
+                    session_id,
+                    step_ui,
+                    exc_info=exc,
+                )
                 return
 
 
@@ -314,10 +330,10 @@ def _build_image_prompt(
     step_ui: int,
     prompt: str,
     theme_id: str | None,
-    image_prompt: str | None,
+    image_scene_brief: str | None,
 ) -> str:
-    if isinstance(image_prompt, str) and image_prompt.strip():
-        return image_prompt.strip()
+    if isinstance(image_scene_brief, str) and image_scene_brief.strip():
+        return image_scene_brief.strip()
     if step_ui == 1:
         return _build_reference_prompt(theme_id)
     return _build_step_prompt(prompt)

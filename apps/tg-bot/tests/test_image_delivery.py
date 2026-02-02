@@ -51,17 +51,16 @@ def test_reference_image_created(monkeypatch):
             chat_id=1,
             step_message_id=10,
             session_id=42,
-            step_ui=1,
+            step_ui=2,
             total_steps=8,
             prompt="scene",
             theme_id="robot_world",
-            step0=0,
             image_prompt="Детская книжная иллюстрация про роботов.",
         )
     )
 
     assert captured["insert"]["role"] == "step_image"
-    assert captured["insert"]["step_ui"] == 1
+    assert captured["insert"]["step_ui"] == 2
     assert "иллюстрация" in captured["insert"]["prompt"]
     assert bot.sent
 
@@ -102,11 +101,10 @@ def test_step_image_uses_reference(monkeypatch):
             chat_id=1,
             step_message_id=10,
             session_id=42,
-            step_ui=4,
+            step_ui=5,
             total_steps=8,
             prompt="scene text",
             theme_id=None,
-            step0=3,
             image_prompt="Детская книжная иллюстрация по сцене.",
         )
     )
@@ -150,11 +148,10 @@ def test_step_image_without_reference(monkeypatch):
             chat_id=1,
             step_message_id=10,
             session_id=42,
-            step_ui=4,
+            step_ui=5,
             total_steps=8,
             prompt="scene text",
             theme_id=None,
-            step0=3,
             image_prompt="Детская книжная иллюстрация по сцене.",
         )
     )
@@ -165,7 +162,13 @@ def test_step_image_without_reference(monkeypatch):
 
 
 def test_image_steps_with_step0():
-    schedule = image_delivery.ImageSchedule(step_ui=1, total_steps=8, step0=0, has_image_prompt=True)
+    schedule = image_delivery.ImageSchedule(step_ui=2, total_steps=8, story_step=0, has_image_prompt=True)
     assert schedule.needs_image is True
-    schedule = image_delivery.ImageSchedule(step_ui=2, total_steps=8, step0=1, has_image_prompt=True)
+    schedule = image_delivery.ImageSchedule(step_ui=3, total_steps=8, story_step=1, has_image_prompt=True)
     assert schedule.needs_image is False
+
+
+def test_story_step_mapping():
+    assert image_delivery._resolve_story_step(2) == 0
+    assert image_delivery._resolve_story_step(5) == 3
+    assert image_delivery._resolve_story_step(3) == 1

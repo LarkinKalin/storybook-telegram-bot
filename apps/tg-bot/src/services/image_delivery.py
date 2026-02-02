@@ -28,24 +28,29 @@ _ASSETS_IMAGE_DIR = "images"
 class ImageSchedule:
     step_ui: int
     total_steps: int
-    step0: int | None = None
+    story_step: int
     has_image_prompt: bool = False
 
     @property
     def needs_image(self) -> bool:
-        return self.has_image_prompt and self.step_ui in image_steps(self.total_steps)
+        return self.has_image_prompt and self.story_step in image_steps(self.total_steps)
 
     @property
     def image_mode(self) -> str:
         return "t2i" if self.step_ui == 1 else "i2i"
 
 
-def image_steps(total_steps: int) -> set[int]:
-    if total_steps >= 12:
-        return {1, 5, 9}
-    if total_steps >= 8:
-        return {1, 4, 8}
-    return {1}
+def image_steps(_total_steps: int) -> set[int]:
+    return {0, 3, 7}
+
+
+def _resolve_story_step(step_ui: int) -> int:
+    return step_ui - 2
+
+
+def _step_images_enabled() -> bool:
+    raw = os.getenv("SKAZKA_STEP_IMAGES", "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def schedule_image_delivery(
@@ -58,34 +63,47 @@ def schedule_image_delivery(
     total_steps: int,
     prompt: str,
     theme_id: str | None = None,
-    step0: int | None = None,
     image_prompt: str | None = None,
 ) -> None:
-    step_ui = step0 + 1 if step0 is not None else step_ui
+    story_step = _resolve_story_step(step_ui)
+    if story_step < 0:
+        logger.info(
+            "TG.7.4.01 needs_image=false session_id=%s step_ui=%s story_step=%s total_steps=%s reason=invalid_step",
+            session_id,
+            step_ui,
+            story_step,
+            total_steps,
+        )
+        return
     has_image_prompt = isinstance(image_prompt, str) and image_prompt.strip() != ""
     schedule = ImageSchedule(
         step_ui=step_ui,
         total_steps=total_steps,
-        step0=step0,
+        story_step=story_step,
         has_image_prompt=has_image_prompt,
     )
-    reason = "ok"
-    if not has_image_prompt:
-        reason = "missing_image_prompt"
-    elif step_ui not in image_steps(total_steps):
-        reason = "step_not_scheduled"
     logger.info(
-        "TG.7.4.01 needs_image=%s session_id=%s step_ui=%s step0=%s "
-        "has_image_prompt=%s total_steps=%s reason=%s",
+        "TG.7.4.01 needs_image=%s session_id=%s step_ui=%s story_step=%s total_steps=%s",
         schedule.needs_image,
         session_id,
         step_ui,
-        step0,
-        has_image_prompt,
+        story_step,
         total_steps,
-        reason,
     )
     if not schedule.needs_image:
+        if not has_image_prompt and story_step in image_steps(total_steps):
+            logger.info(
+                "TG.7.4.01 image_outcome=skipped reason=no_image_prompt session_id=%s step_ui=%s",
+                session_id,
+                step_ui,
+            )
+        return
+    if not _step_images_enabled():
+        logger.info(
+            "TG.7.4.01 image_outcome=skipped reason=disabled session_id=%s step_ui=%s",
+            session_id,
+            step_ui,
+        )
         return
     asyncio.create_task(
         _generate_and_send_image(
@@ -97,7 +115,6 @@ def schedule_image_delivery(
             total_steps=total_steps,
             prompt=prompt,
             theme_id=theme_id,
-            step0=step0,
             image_prompt=image_prompt,
         )
     )
@@ -113,15 +130,16 @@ async def _generate_and_send_image(
     total_steps: int,
     prompt: str,
     theme_id: str | None,
-    step0: int | None,
     image_prompt: str | None,
 ) -> None:
-    step_ui = step0 + 1 if step0 is not None else step_ui
+    story_step = _resolve_story_step(step_ui)
+    if story_step < 0:
+        return
     has_image_prompt = isinstance(image_prompt, str) and image_prompt.strip() != ""
     schedule = ImageSchedule(
         step_ui=step_ui,
         total_steps=total_steps,
-        step0=step0,
+        story_step=story_step,
         has_image_prompt=has_image_prompt,
     )
     if not schedule.needs_image:
@@ -154,12 +172,12 @@ async def _generate_and_send_image(
 
     for attempt in range(retries + 1):
         logger.info(
-            "TG.7.4.01 image_mode=%s attempt=%s session_id=%s step_ui=%s step0=%s reference_asset_id=%s",
+            "TG.7.4.01 image_mode=%s attempt=%s session_id=%s step_ui=%s story_step=%s reference_asset_id=%s",
             schedule.image_mode,
             attempt,
             session_id,
             step_ui,
-            step0,
+            story_step,
             reference_asset_id,
         )
         try:

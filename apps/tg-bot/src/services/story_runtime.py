@@ -232,7 +232,7 @@ def build_story_request(
             "free_text_allowed_after": state.get("free_text_allowed_after"),
             "milestone_votes": state.get("milestone_votes"),
         },
-        "format": "Верни JSON формата {text, recap_short, choices[]}.",
+        "format": "Верни JSON формата {text, recap_short, choices[], image_prompt?}.",
     }
 
 

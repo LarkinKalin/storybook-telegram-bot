@@ -90,7 +90,7 @@ def schedule_image_delivery(
         in_plan=in_plan,
         has_scene_brief=has_image_scene_brief,
     )
-    logger.info(
+    logger.warning(
         "TG.7.4.01 called session_id=%s step_ui=%s steps_total=%s enabled=%s reason=%s",
         session_id,
         step_ui,
@@ -99,7 +99,7 @@ def schedule_image_delivery(
         reason,
     )
     if reason != "eligible_for_image":
-        logger.info(
+        logger.warning(
             "TG.7.4.01 image_outcome outcome=skipped reason=%s session_id=%s step_ui=%s",
             reason,
             session_id,
@@ -116,7 +116,7 @@ def schedule_image_delivery(
         image_model=image_model,
         prompt=image_scene_brief.strip() if isinstance(image_scene_brief, str) else prompt,
     )
-    logger.info(
+    logger.warning(
         "TG.7.4.01 image_scheduled session_id=%s step_ui=%s session_image_id=%s",
         session_id,
         step_ui,
@@ -186,7 +186,7 @@ async def _generate_and_send_image(
         theme_id=theme_id,
         image_scene_brief=image_scene_brief,
     )
-    logger.info("TG.7.4.01 image_provider_called provider=openrouter")
+    logger.warning("TG.7.4.01 image_provider_called provider=openrouter")
 
     for attempt in range(retries + 1):
         logger.info(
@@ -230,7 +230,7 @@ async def _generate_and_send_image(
                 caption="Иллюстрация",
                 reply_to_message_id=step_message_id,
             )
-            logger.info(
+            logger.warning(
                 "TG.7.4.01 image_outcome outcome=ok reason=provider_success session_id=%s step_ui=%s asset_id=%s reference_asset_id=%s",
                 session_id,
                 step_ui,
@@ -246,7 +246,7 @@ async def _generate_and_send_image(
             )
             return
         except MissingOpenRouterKeyError:
-            logger.info(
+            logger.warning(
                 "TG.7.4.01 image_outcome outcome=error reason=missing_api_key session_id=%s step_ui=%s",
                 session_id,
                 step_ui,
@@ -254,7 +254,7 @@ async def _generate_and_send_image(
             return
         except Exception as exc:  # noqa: BLE001
             if attempt >= retries:
-                logger.info(
+                logger.warning(
                     "TG.7.4.01 image_outcome outcome=error reason=%s session_id=%s step_ui=%s",
                     str(exc),
                     session_id,

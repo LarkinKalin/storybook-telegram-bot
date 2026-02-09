@@ -113,6 +113,11 @@ async def deliver_step_view(
     if not scene_brief:
         normalized = _normalize_content(step_view.text)
         scene_brief = normalized[:200] if normalized else None
+    logger.warning(
+        "TG.7.4.01 entrypoint ui_delivery schedule_image_delivery session_id=%s step_ui=%s",
+        session_id,
+        step + 2,
+    )
     schedule_image_delivery(
         bot=message.bot,
         chat_id=step_message.chat.id,

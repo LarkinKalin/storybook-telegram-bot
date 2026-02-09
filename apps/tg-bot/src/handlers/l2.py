@@ -13,6 +13,8 @@ from src.keyboards.confirm import build_new_story_confirm_keyboard
 from src.services.runtime_sessions import get_session, has_active, start_session, touch_last_step
 from src.services.story_runtime import render_step
 from src.services.theme_registry import registry
+from src.services.ui_delivery import _normalize_content
+from src.services.image_delivery import schedule_image_delivery
 from src.states import L3, UX
 
 router = Router(name="l2")
@@ -212,4 +214,34 @@ async def _start_theme_session(
     except Exception:
         await _handle_db_error(message, state)
         return
+    scene_brief = step_view.image_prompt
+    if not scene_brief:
+        normalized = _normalize_content(step_text)
+        scene_brief = normalized[:200] if normalized else None
+    step_ui = session.step + 2
+    logger.warning(
+        "TG.7.4.01 entrypoint l2_render_step schedule_image_delivery session_id=%s step_ui=%s",
+        session.id,
+        step_ui,
+    )
+    try:
+        schedule_image_delivery(
+            bot=message.bot,
+            chat_id=step_message.chat.id,
+            step_message_id=step_message.message_id,
+            session_id=session.id,
+            step_ui=step_ui,
+            total_steps=session.max_steps,
+            prompt=step_text,
+            theme_id=session.theme_id,
+            image_scene_brief=scene_brief,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "TG.7.4.01 image_outcome outcome=error reason=%s session_id=%s step_ui=%s",
+            str(exc),
+            session.id,
+            step_ui,
+            exc_info=exc,
+        )
     await state.set_state(L3.STEP)

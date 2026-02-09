@@ -175,17 +175,17 @@ async def _generate_and_send_image(
     reference_payload = None
     image_mode = schedule.image_mode
     if schedule.image_mode != "t2i":
-        reference_asset_id = session_images.get_reference_asset_id(session_id)
+        reference_asset_id = session_images.get_step_image_asset_id(session_id, step_ui=1)
         if reference_asset_id is not None:
             reference_payload = _load_reference(reference_asset_id)
         if reference_payload is None:
             logger.warning(
-                "TG.7.4.01 image.reference missing session_id=%s step_ui=%s",
+                "TG.7.4.01 image_outcome outcome=skipped reason=no_reference session_id=%s step_ui=%s story_step_ui=%s",
                 session_id,
                 step_ui,
+                story_step_ui,
             )
-            reference_asset_id = None
-            image_mode = "t2i"
+            return
 
     prompt = _build_image_prompt(
         step_ui=story_step_ui,
@@ -193,9 +193,16 @@ async def _generate_and_send_image(
         theme_id=theme_id,
         image_scene_brief=image_scene_brief,
     )
-    logger.warning("TG.7.4.01 image_provider_called provider=openrouter")
-
     for attempt in range(retries + 1):
+        logger.warning(
+            "TG.7.4.01 image_provider_called provider=openrouter mode=%s attempt=%s session_id=%s step_ui=%s story_step_ui=%s reference_asset_id=%s",
+            image_mode,
+            attempt,
+            session_id,
+            step_ui,
+            story_step_ui,
+            reference_asset_id,
+        )
         logger.info(
             "TG.7.4.01 image_mode=%s attempt=%s session_id=%s step_ui=%s story_step_ui=%s reference_asset_id=%s",
             schedule.image_mode,
@@ -262,8 +269,7 @@ async def _generate_and_send_image(
         except Exception as exc:  # noqa: BLE001
             if attempt >= retries:
                 logger.warning(
-                    "TG.7.4.01 image_outcome outcome=error reason=%s session_id=%s step_ui=%s",
-                    str(exc),
+                    "TG.7.4.01 image_outcome outcome=error reason=provider_error_final session_id=%s step_ui=%s",
                     session_id,
                     step_ui,
                     exc_info=exc,
@@ -354,7 +360,7 @@ async def _wait_for_reference(
     delay_s: float = 3.0,
 ) -> int | None:
     for idx in range(attempts):
-        reference_asset_id = session_images.get_reference_asset_id(session_id)
+        reference_asset_id = session_images.get_step_image_asset_id(session_id, step_ui=1)
         if reference_asset_id is not None:
             return reference_asset_id
         if idx < attempts - 1:

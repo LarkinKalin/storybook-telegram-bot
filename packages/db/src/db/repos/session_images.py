@@ -84,3 +84,22 @@ def get_reference_asset_id(session_id: int) -> int | None:
             if not row:
                 return None
             return int(row["asset_id"])
+
+
+def get_step_image_asset_id(session_id: int, step_ui: int) -> int | None:
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT asset_id
+                FROM session_images
+                WHERE session_id = %s AND role = 'step_image' AND step_ui = %s
+                ORDER BY id
+                LIMIT 1;
+                """,
+                (session_id, step_ui),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return int(row["asset_id"])

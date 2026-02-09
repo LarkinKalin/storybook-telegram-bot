@@ -41,7 +41,7 @@ def test_reference_image_created(monkeypatch):
     monkeypatch.setattr(image_delivery, "_resolve_retries", lambda: 0)
     monkeypatch.setattr(image_delivery, "generate_t2i", fake_t2i)
     monkeypatch.setattr(image_delivery, "_store_asset", fake_store_asset)
-    monkeypatch.setattr(image_delivery.session_images, "get_reference_asset_id", lambda _sid: None)
+    monkeypatch.setattr(image_delivery.session_images, "get_step_image_asset_id", lambda _sid, step_ui: None)
     monkeypatch.setattr(image_delivery.session_images, "insert_session_image", fake_insert_session_image)
 
     bot = DummyBot()
@@ -89,7 +89,7 @@ def test_step_image_uses_reference(monkeypatch):
     monkeypatch.setattr(image_delivery, "_resolve_retries", lambda: 0)
     monkeypatch.setattr(image_delivery, "generate_i2i", fake_i2i)
     monkeypatch.setattr(image_delivery, "_store_asset", fake_store_asset)
-    monkeypatch.setattr(image_delivery.session_images, "get_reference_asset_id", lambda _sid: 999)
+    monkeypatch.setattr(image_delivery.session_images, "get_step_image_asset_id", lambda _sid, step_ui: 999)
     monkeypatch.setattr(
         image_delivery, "_load_reference", lambda _asset_id: image_delivery.ReferencePayload(b"r", "image/png")
     )
@@ -118,29 +118,19 @@ def test_step_image_uses_reference(monkeypatch):
 
 
 def test_step_image_without_reference(monkeypatch):
-    captured = {}
-
-    def fake_t2i(_prompt):
-        return (b"img", "image/png", 10, 10, "sha")
-
-    def fake_store_asset(*, image_bytes, mime, width, height, sha256=None):
-        captured["stored"] = {
-            "bytes": image_bytes,
-            "mime": mime,
-            "width": width,
-            "height": height,
-            "sha256": sha256,
-        }
-        return 789, "images/step_no_ref.png"
+    captured = {"called": 0}
 
     def fake_insert_session_image(**kwargs):
         captured["insert"] = kwargs
         return 1
 
+    def fail_i2i(*_args, **_kwargs):
+        captured["called"] += 1
+        raise AssertionError("i2i should not be called without reference")
+
     monkeypatch.setattr(image_delivery, "_resolve_retries", lambda: 0)
-    monkeypatch.setattr(image_delivery, "generate_t2i", fake_t2i)
-    monkeypatch.setattr(image_delivery, "_store_asset", fake_store_asset)
-    monkeypatch.setattr(image_delivery.session_images, "get_reference_asset_id", lambda _sid: None)
+    monkeypatch.setattr(image_delivery, "generate_i2i", fail_i2i)
+    monkeypatch.setattr(image_delivery.session_images, "get_step_image_asset_id", lambda _sid, step_ui: None)
     monkeypatch.setattr(image_delivery.session_images, "insert_session_image", fake_insert_session_image)
 
     bot = DummyBot()
@@ -159,8 +149,48 @@ def test_step_image_without_reference(monkeypatch):
         )
     )
 
-    assert captured["insert"]["role"] == "step_image"
-    assert captured["insert"]["reference_asset_id"] is None
+    assert "insert" not in captured
+    assert captured["called"] == 0
+    assert not bot.sent
+
+
+def test_retry_on_provider_error(monkeypatch):
+    captured = {"attempts": 0}
+
+    def flaky_t2i(_prompt):
+        captured["attempts"] += 1
+        if captured["attempts"] == 1:
+            raise RuntimeError("boom")
+        return (b"img", "image/png", 10, 10, "sha")
+
+    def fake_store_asset(*, image_bytes, mime, width, height, sha256=None):
+        return 321, "images/retry.png"
+
+    def fake_insert_session_image(**_kwargs):
+        return 1
+
+    monkeypatch.setattr(image_delivery, "_resolve_retries", lambda: 1)
+    monkeypatch.setattr(image_delivery, "generate_t2i", flaky_t2i)
+    monkeypatch.setattr(image_delivery, "_store_asset", fake_store_asset)
+    monkeypatch.setattr(image_delivery.session_images, "insert_session_image", fake_insert_session_image)
+
+    bot = DummyBot()
+    asyncio.run(
+        image_delivery._generate_and_send_image(
+            bot=bot,
+            chat_id=1,
+            step_message_id=10,
+            session_id=42,
+            step_ui=1,
+            story_step_ui=1,
+            total_steps=10,
+            prompt="scene",
+            theme_id=None,
+            image_scene_brief="Короткая сцена.",
+        )
+    )
+
+    assert captured["attempts"] == 2
     assert bot.sent
 
 

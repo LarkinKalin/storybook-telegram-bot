@@ -4,11 +4,15 @@ import base64
 import hashlib
 import os
 from typing import Any, Dict, Tuple
+
 import requests
 
 
 class MissingOpenRouterKeyError(ValueError):
     pass
+
+
+_SIM_FAIL_USED = False
 
 
 def generate_t2i(prompt: str) -> Tuple[bytes, str, int | None, int | None, str]:
@@ -37,6 +41,8 @@ def _generate_image(
     endpoint = "https://openrouter.ai/api/v1/chat/completions"
     model = os.getenv("OPENROUTER_MODEL_IMAGE", "black-forest-labs/flux.2-pro").strip()
     timeout_s = _resolve_timeout()
+    prompt = _clamp_prompt(prompt)
+    _maybe_simulate_failure()
 
     messages = [_build_prompt_message(prompt, reference_bytes, reference_mime)]
     payload: Dict[str, Any] = {
@@ -79,13 +85,36 @@ def _get_api_key() -> str:
 
 
 def _resolve_timeout() -> float:
-    raw = os.getenv("OPENROUTER_IMAGE_TIMEOUT_S", "90").strip()
+    raw = os.getenv("OPENROUTER_IMAGE_TIMEOUT_SEC", "").strip()
+    if not raw:
+        raw = os.getenv("OPENROUTER_IMAGE_TIMEOUT_S", "90").strip()
     if not raw:
         return 90.0
     try:
         return float(raw)
     except ValueError:
         return 90.0
+
+
+def _clamp_prompt(prompt: str) -> str:
+    raw = os.getenv("OPENROUTER_IMAGE_PROMPT_MAX_LEN", "1200").strip()
+    try:
+        limit = max(200, int(raw))
+    except ValueError:
+        limit = 1200
+    if len(prompt) <= limit:
+        return prompt
+    return prompt[:limit].rstrip()
+
+
+def _maybe_simulate_failure() -> None:
+    global _SIM_FAIL_USED
+    if _SIM_FAIL_USED:
+        return
+    if os.getenv("SKAZKA_IMAGE_PROVIDER_SIM_FAIL", "0").strip() not in {"1", "true", "yes", "on"}:
+        return
+    _SIM_FAIL_USED = True
+    raise RuntimeError("simulated image provider failure")
 
 
 def _build_prompt_message(

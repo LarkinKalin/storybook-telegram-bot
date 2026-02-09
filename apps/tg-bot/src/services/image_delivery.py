@@ -245,7 +245,8 @@ async def _generate_and_send_image(
                 reply_to_message_id=step_message_id,
             )
             logger.warning(
-                "TG.7.4.01 image_outcome outcome=ok reason=provider_success session_id=%s step_ui=%s asset_id=%s reference_asset_id=%s",
+                "TG.7.4.01 image_outcome outcome=ok reason=provider_success attempt=%s session_id=%s step_ui=%s asset_id=%s reference_asset_id=%s",
+                attempt,
                 session_id,
                 step_ui,
                 asset_id,
@@ -267,6 +268,15 @@ async def _generate_and_send_image(
             )
             return
         except Exception as exc:  # noqa: BLE001
+            reason = "simulated_failure" if "simulated image provider failure" in str(exc).lower() else "provider_error"
+            logger.warning(
+                "TG.7.4.01 image_outcome outcome=error reason=%s attempt=%s session_id=%s step_ui=%s",
+                reason,
+                attempt,
+                session_id,
+                step_ui,
+                exc_info=exc,
+            )
             if attempt >= retries:
                 logger.warning(
                     "TG.7.4.01 image_outcome outcome=error reason=provider_error_final session_id=%s step_ui=%s",

@@ -10,6 +10,7 @@ services:
       - SKAZKA_CONTENT_DIR=/app/content
       - LLM_DEBUG_DUMP_DIR=/app/var/llm_dumps
       - SKAZKA_STEP_IMAGES=${SKAZKA_STEP_IMAGES:-0}
+      - SKAZKA_IMAGE_PROVIDER_SIM_FAIL=${SKAZKA_IMAGE_PROVIDER_SIM_FAIL:-0}
     volumes:
       - ../../content:/app/content:ro
       - /srv/git/skazka/var/assets:/app/var/assets

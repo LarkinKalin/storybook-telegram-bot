@@ -51,7 +51,8 @@ def test_reference_image_created(monkeypatch):
             chat_id=1,
             step_message_id=10,
             session_id=42,
-            step_ui=2,
+            step_ui=1,
+            story_step_ui=1,
             total_steps=8,
             prompt="scene",
             theme_id="robot_world",
@@ -60,7 +61,7 @@ def test_reference_image_created(monkeypatch):
     )
 
     assert captured["insert"]["role"] == "step_image"
-    assert captured["insert"]["step_ui"] == 2
+    assert captured["insert"]["step_ui"] == 1
     assert "иллюстрация" in captured["insert"]["prompt"]
     assert bot.sent
 
@@ -101,7 +102,8 @@ def test_step_image_uses_reference(monkeypatch):
             chat_id=1,
             step_message_id=10,
             session_id=42,
-            step_ui=5,
+            step_ui=4,
+            story_step_ui=4,
             total_steps=8,
             prompt="scene text",
             theme_id=None,
@@ -148,7 +150,8 @@ def test_step_image_without_reference(monkeypatch):
             chat_id=1,
             step_message_id=10,
             session_id=42,
-            step_ui=5,
+            step_ui=4,
+            story_step_ui=4,
             total_steps=8,
             prompt="scene text",
             theme_id=None,
@@ -161,14 +164,19 @@ def test_step_image_without_reference(monkeypatch):
     assert bot.sent
 
 
-def test_image_steps_with_step0():
-    schedule = image_delivery.ImageSchedule(step_ui=2, total_steps=8, story_step=0, has_image_scene_brief=True)
+def test_image_steps_with_story_step_ui():
+    schedule = image_delivery.ImageSchedule(story_step_ui=1, total_steps=8, has_image_scene_brief=True)
     assert schedule.needs_image is True
-    schedule = image_delivery.ImageSchedule(step_ui=3, total_steps=8, story_step=1, has_image_scene_brief=True)
+    schedule = image_delivery.ImageSchedule(story_step_ui=2, total_steps=8, has_image_scene_brief=True)
     assert schedule.needs_image is False
 
 
-def test_story_step_mapping():
-    assert image_delivery._resolve_story_step(2) == 0
-    assert image_delivery._resolve_story_step(5) == 3
-    assert image_delivery._resolve_story_step(3) == 1
+def test_image_steps_plan_for_totals():
+    assert image_delivery.image_steps(8) == {1, 4, 8}
+    assert image_delivery.image_steps(10) == {1, 4, 8}
+    assert image_delivery.image_steps(12) == {1, 5, 9}
+
+
+def test_story_step_ui_mapping():
+    assert image_delivery.resolve_story_step_ui(0) == 1
+    assert image_delivery.resolve_story_step_ui(3) == 4

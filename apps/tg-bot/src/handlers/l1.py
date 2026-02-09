@@ -32,7 +32,7 @@ from src.services.ui_delivery import (
     deliver_step_view,
     _normalize_content,
 )
-from src.services.image_delivery import schedule_image_delivery
+from src.services.image_delivery import resolve_story_step_ui, schedule_image_delivery
 from db.repos import ui_events
 from src.services.content_stub import build_content_step
 from db.repos import session_events
@@ -397,11 +397,14 @@ async def _continue_current(
     if not scene_brief:
         normalized = _normalize_content(step_text)
         scene_brief = normalized[:200] if normalized else None
-    step_ui = session.step + 2
+    # Engine step is zero-based; UI/story step index is step0 + 1.
+    story_step_ui = resolve_story_step_ui(session.step)
+    step_ui = story_step_ui
     logger.warning(
-        "TG.7.4.01 entrypoint l1_continue schedule_image_delivery session_id=%s step_ui=%s",
+        "TG.7.4.01 entrypoint l1_continue schedule_image_delivery session_id=%s step_ui=%s story_step_ui=%s",
         session.id,
         step_ui,
+        story_step_ui,
     )
     try:
         schedule_image_delivery(
@@ -409,7 +412,9 @@ async def _continue_current(
             chat_id=step_message.chat.id,
             step_message_id=step_message.message_id,
             session_id=session.id,
+            engine_step=session.step,
             step_ui=step_ui,
+            story_step_ui=story_step_ui,
             total_steps=session.max_steps,
             prompt=step_text,
             theme_id=session.theme_id,

@@ -56,3 +56,4 @@ YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINA
 2026-01-29 | TG.3.2.02 | DONE | DB v0.2 assets + session_images (no base64 in Postgres)
 2026-01-30 | TG.7.5.01 | DONE | Why (Почемучка) v0.2: Q/A + LLM fallback (Kimi) + prompt pack + guardrails
 2026-02-09 | TG.7.4.01.A | DONE | Image pipeline: invocation + scheduling proven
+2026-02-09 | TG.7.4.02 | DONE | Image plan aligned to canonical story steps (8/10/12)

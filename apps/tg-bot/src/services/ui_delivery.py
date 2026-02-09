@@ -11,7 +11,7 @@ from aiogram import Bot
 from aiogram.types import Message, ReplyKeyboardRemove
 
 from db.repos import sessions, ui_events
-from src.services.image_delivery import schedule_image_delivery
+from src.services.image_delivery import resolve_story_step_ui, schedule_image_delivery
 from src.services.story_runtime import StepView
 
 logger = logging.getLogger(__name__)
@@ -113,17 +113,21 @@ async def deliver_step_view(
     if not scene_brief:
         normalized = _normalize_content(step_view.text)
         scene_brief = normalized[:200] if normalized else None
+    story_step_ui = resolve_story_step_ui(step)
     logger.warning(
-        "TG.7.4.01 entrypoint ui_delivery schedule_image_delivery session_id=%s step_ui=%s",
+        "TG.7.4.01 entrypoint ui_delivery schedule_image_delivery session_id=%s step_ui=%s story_step_ui=%s",
         session_id,
-        step + 2,
+        story_step_ui,
+        story_step_ui,
     )
     schedule_image_delivery(
         bot=message.bot,
         chat_id=step_message.chat.id,
         step_message_id=step_message.message_id,
         session_id=session_id,
-        step_ui=step + 2,
+        engine_step=step,
+        step_ui=story_step_ui,
+        story_step_ui=story_step_ui,
         total_steps=total_steps,
         prompt=step_view.text,
         theme_id=theme_id,

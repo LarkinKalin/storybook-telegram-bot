@@ -26,31 +26,36 @@ _ASSETS_IMAGE_DIR = "images"
 
 @dataclass
 class ImageSchedule:
-    step_ui: int
+    story_step_ui: int
     total_steps: int
-    story_step: int
     has_image_scene_brief: bool = False
 
     @property
     def needs_image(self) -> bool:
-        return self.has_image_scene_brief and self.story_step in image_steps(self.total_steps)
+        return self.has_image_scene_brief and self.story_step_ui in image_steps(self.total_steps)
 
     @property
     def image_mode(self) -> str:
-        return "t2i" if self.step_ui == 1 else "i2i"
+        return "t2i" if self.story_step_ui == 1 else "i2i"
 
 
 def image_steps(_total_steps: int) -> set[int]:
-    return {0, 3, 7}
-
-
-def _resolve_story_step(step_ui: int) -> int:
-    return step_ui - 2
+    if _total_steps in {8, 10}:
+        return {1, 4, 8}
+    if _total_steps == 12:
+        return {1, 5, 9}
+    midpoint = max(1, round(_total_steps / 2))
+    return {1, midpoint, _total_steps}
 
 
 def _step_images_enabled() -> bool:
     raw = os.getenv("SKAZKA_STEP_IMAGES", "0").strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+def resolve_story_step_ui(engine_step: int) -> int:
+    """Engine step is zero-based (step0); UI/story steps are 1-based."""
+    return engine_step + 1
 
 
 def _resolve_call_reason(*, enabled: bool, in_plan: bool, has_scene_brief: bool) -> str:
@@ -69,47 +74,50 @@ def schedule_image_delivery(
     chat_id: int,
     step_message_id: int,
     session_id: int,
+    engine_step: int,
     step_ui: int,
+    story_step_ui: int,
     total_steps: int,
     prompt: str,
     theme_id: str | None = None,
     image_scene_brief: str | None = None,
 ) -> None:
     enabled = _step_images_enabled()
-    story_step = _resolve_story_step(step_ui)
     has_image_scene_brief = isinstance(image_scene_brief, str) and image_scene_brief.strip() != ""
     schedule = ImageSchedule(
-        step_ui=step_ui,
+        story_step_ui=story_step_ui,
         total_steps=total_steps,
-        story_step=story_step,
         has_image_scene_brief=has_image_scene_brief,
     )
-    in_plan = story_step in image_steps(total_steps)
+    in_plan = story_step_ui in image_steps(total_steps)
     reason = _resolve_call_reason(
         enabled=enabled,
         in_plan=in_plan,
         has_scene_brief=has_image_scene_brief,
     )
     logger.warning(
-        "TG.7.4.01 called session_id=%s step_ui=%s steps_total=%s enabled=%s reason=%s",
+        "TG.7.4.01 called session_id=%s engine_step=%s step_ui=%s story_step_ui=%s steps_total=%s enabled=%s reason=%s",
         session_id,
+        engine_step,
         step_ui,
+        story_step_ui,
         total_steps,
         "true" if enabled else "false",
         reason,
     )
     if reason != "eligible_for_image":
         logger.warning(
-            "TG.7.4.01 image_outcome outcome=skipped reason=%s session_id=%s step_ui=%s",
+            "TG.7.4.01 image_outcome outcome=skipped reason=%s session_id=%s step_ui=%s story_step_ui=%s",
             reason,
             session_id,
             step_ui,
+            story_step_ui,
         )
         return
     image_model = os.getenv("OPENROUTER_MODEL_IMAGE", "black-forest-labs/flux.2-pro").strip()
     scheduled_id = session_images.insert_session_image(
         session_id=session_id,
-        step_ui=step_ui,
+        step_ui=story_step_ui,
         asset_id=None,
         role="step_image",
         reference_asset_id=None,
@@ -117,9 +125,10 @@ def schedule_image_delivery(
         prompt=image_scene_brief.strip() if isinstance(image_scene_brief, str) else prompt,
     )
     logger.warning(
-        "TG.7.4.01 image_scheduled session_id=%s step_ui=%s session_image_id=%s",
+        "TG.7.4.01 image_scheduled session_id=%s step_ui=%s story_step_ui=%s session_image_id=%s",
         session_id,
         step_ui,
+        story_step_ui,
         scheduled_id,
     )
     asyncio.create_task(
@@ -129,6 +138,7 @@ def schedule_image_delivery(
             step_message_id=step_message_id,
             session_id=session_id,
             step_ui=step_ui,
+            story_step_ui=story_step_ui,
             total_steps=total_steps,
             prompt=prompt,
             theme_id=theme_id,
@@ -144,19 +154,16 @@ async def _generate_and_send_image(
     step_message_id: int,
     session_id: int,
     step_ui: int,
+    story_step_ui: int,
     total_steps: int,
     prompt: str,
     theme_id: str | None,
     image_scene_brief: str | None,
 ) -> None:
-    story_step = _resolve_story_step(step_ui)
-    if story_step < 0:
-        return
     has_image_scene_brief = isinstance(image_scene_brief, str) and image_scene_brief.strip() != ""
     schedule = ImageSchedule(
-        step_ui=step_ui,
+        story_step_ui=story_step_ui,
         total_steps=total_steps,
-        story_step=story_step,
         has_image_scene_brief=has_image_scene_brief,
     )
     if not schedule.needs_image:
@@ -181,7 +188,7 @@ async def _generate_and_send_image(
             image_mode = "t2i"
 
     prompt = _build_image_prompt(
-        step_ui=step_ui,
+        step_ui=story_step_ui,
         prompt=prompt,
         theme_id=theme_id,
         image_scene_brief=image_scene_brief,
@@ -190,12 +197,12 @@ async def _generate_and_send_image(
 
     for attempt in range(retries + 1):
         logger.info(
-            "TG.7.4.01 image_mode=%s attempt=%s session_id=%s step_ui=%s story_step=%s reference_asset_id=%s",
+            "TG.7.4.01 image_mode=%s attempt=%s session_id=%s step_ui=%s story_step_ui=%s reference_asset_id=%s",
             schedule.image_mode,
             attempt,
             session_id,
             step_ui,
-            story_step,
+            story_step_ui,
             reference_asset_id,
         )
         try:
@@ -217,7 +224,7 @@ async def _generate_and_send_image(
             role = "step_image"
             session_images.insert_session_image(
                 session_id=session_id,
-                step_ui=step_ui,
+                step_ui=story_step_ui,
                 asset_id=asset_id,
                 role=role,
                 reference_asset_id=reference_asset_id,

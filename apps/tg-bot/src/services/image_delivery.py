@@ -29,11 +29,11 @@ class ImageSchedule:
     step_ui: int
     total_steps: int
     story_step: int
-    has_image_prompt: bool = False
+    has_image_scene_brief: bool = False
 
     @property
     def needs_image(self) -> bool:
-        return self.has_image_prompt and self.story_step in image_steps(self.total_steps)
+        return self.has_image_scene_brief and self.story_step in image_steps(self.total_steps)
 
     @property
     def image_mode(self) -> str:
@@ -53,6 +53,16 @@ def _step_images_enabled() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _resolve_call_reason(*, enabled: bool, in_plan: bool, has_scene_brief: bool) -> str:
+    if not enabled:
+        return "feature_disabled"
+    if not in_plan:
+        return "step_not_in_plan"
+    if not has_scene_brief:
+        return "no_image_scene_brief"
+    return "eligible_for_image"
+
+
 def schedule_image_delivery(
     *,
     bot: Bot,
@@ -63,44 +73,35 @@ def schedule_image_delivery(
     total_steps: int,
     prompt: str,
     theme_id: str | None = None,
-    image_prompt: str | None = None,
+    image_scene_brief: str | None = None,
 ) -> None:
+    enabled = _step_images_enabled()
     story_step = _resolve_story_step(step_ui)
-    if story_step < 0:
-        logger.info(
-            "TG.7.4.01 needs_image=false session_id=%s step_ui=%s story_step=%s total_steps=%s reason=invalid_step",
-            session_id,
-            step_ui,
-            story_step,
-            total_steps,
-        )
-        return
-    has_image_prompt = isinstance(image_prompt, str) and image_prompt.strip() != ""
+    has_image_scene_brief = isinstance(image_scene_brief, str) and image_scene_brief.strip() != ""
     schedule = ImageSchedule(
         step_ui=step_ui,
         total_steps=total_steps,
         story_step=story_step,
-        has_image_prompt=has_image_prompt,
+        has_image_scene_brief=has_image_scene_brief,
+    )
+    in_plan = story_step in image_steps(total_steps)
+    reason = _resolve_call_reason(
+        enabled=enabled,
+        in_plan=in_plan,
+        has_scene_brief=has_image_scene_brief,
     )
     logger.info(
-        "TG.7.4.01 needs_image=%s session_id=%s step_ui=%s story_step=%s total_steps=%s",
-        schedule.needs_image,
+        "TG.7.4.01 called session_id=%s step_ui=%s steps_total=%s enabled=%s reason=%s",
         session_id,
         step_ui,
-        story_step,
         total_steps,
+        "true" if enabled else "false",
+        reason,
     )
-    if not schedule.needs_image:
-        if not has_image_prompt and story_step in image_steps(total_steps):
-            logger.info(
-                "TG.7.4.01 image_outcome=skipped reason=no_image_prompt session_id=%s step_ui=%s",
-                session_id,
-                step_ui,
-            )
-        return
-    if not _step_images_enabled():
+    if reason != "eligible_for_image":
         logger.info(
-            "TG.7.4.01 image_outcome=skipped reason=disabled session_id=%s step_ui=%s",
+            "TG.7.4.01 image_outcome outcome=skipped reason=%s session_id=%s step_ui=%s",
+            reason,
             session_id,
             step_ui,
         )
@@ -131,7 +132,7 @@ def schedule_image_delivery(
             total_steps=total_steps,
             prompt=prompt,
             theme_id=theme_id,
-            image_prompt=image_prompt,
+            image_scene_brief=image_scene_brief,
         )
     )
 
@@ -146,17 +147,17 @@ async def _generate_and_send_image(
     total_steps: int,
     prompt: str,
     theme_id: str | None,
-    image_prompt: str | None,
+    image_scene_brief: str | None,
 ) -> None:
     story_step = _resolve_story_step(step_ui)
     if story_step < 0:
         return
-    has_image_prompt = isinstance(image_prompt, str) and image_prompt.strip() != ""
+    has_image_scene_brief = isinstance(image_scene_brief, str) and image_scene_brief.strip() != ""
     schedule = ImageSchedule(
         step_ui=step_ui,
         total_steps=total_steps,
         story_step=story_step,
-        has_image_prompt=has_image_prompt,
+        has_image_scene_brief=has_image_scene_brief,
     )
     if not schedule.needs_image:
         return

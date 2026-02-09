@@ -55,7 +55,7 @@ def test_reference_image_created(monkeypatch):
             total_steps=8,
             prompt="scene",
             theme_id="robot_world",
-            image_prompt="Детская книжная иллюстрация про роботов.",
+            image_scene_brief="Детская книжная иллюстрация про роботов.",
         )
     )
 
@@ -105,7 +105,7 @@ def test_step_image_uses_reference(monkeypatch):
             total_steps=8,
             prompt="scene text",
             theme_id=None,
-            image_prompt="Детская книжная иллюстрация по сцене.",
+            image_scene_brief="Детская книжная иллюстрация по сцене.",
         )
     )
 
@@ -152,7 +152,7 @@ def test_step_image_without_reference(monkeypatch):
             total_steps=8,
             prompt="scene text",
             theme_id=None,
-            image_prompt="Детская книжная иллюстрация по сцене.",
+            image_scene_brief="Детская книжная иллюстрация по сцене.",
         )
     )
 
@@ -162,9 +162,9 @@ def test_step_image_without_reference(monkeypatch):
 
 
 def test_image_steps_with_step0():
-    schedule = image_delivery.ImageSchedule(step_ui=2, total_steps=8, story_step=0, has_image_prompt=True)
+    schedule = image_delivery.ImageSchedule(step_ui=2, total_steps=8, story_step=0, has_image_scene_brief=True)
     assert schedule.needs_image is True
-    schedule = image_delivery.ImageSchedule(step_ui=3, total_steps=8, story_step=1, has_image_prompt=True)
+    schedule = image_delivery.ImageSchedule(step_ui=3, total_steps=8, story_step=1, has_image_scene_brief=True)
     assert schedule.needs_image is False
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from time import time
 
 from aiogram import Router
@@ -51,9 +52,9 @@ from src.services.book_runtime import (
 from src.services.dev_tools import (
     activate_session_for_user,
     can_use_dev_tools,
-    dev_tools_enabled,
     ensure_demo_session_ready,
     fast_forward_active_session,
+    fast_forward_to_final,
 )
 
 router = Router(name="l1")
@@ -227,7 +228,7 @@ async def _send_shop_screen(message: Message) -> None:
 
 
 async def _send_settings_screen(message: Message) -> None:
-    add_dev = dev_tools_enabled()
+    add_dev = bool(message.from_user and can_use_dev_tools(message.from_user.id))
     await _send_inline_screen(
         message,
         "⚙ Настройки\n\nМожно сохранить имя ребёнка для сказок и будущей книжки.",
@@ -235,6 +236,10 @@ async def _send_settings_screen(message: Message) -> None:
     )
 
 
+
+def _book_offer_enabled() -> bool:
+    raw = os.getenv("SKAZKA_BOOK_OFFER", "1").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 async def _send_book_offer(message: Message) -> None:
@@ -252,11 +257,16 @@ def _normalize_child_name(raw: str) -> str | None:
 
 
 async def _maybe_send_book_offer(message: Message, result) -> None:
+    if not _book_offer_enabled():
+        return
     if not result or not getattr(result, "step_view", None):
         return
     if not (getattr(result, "final_id", None) or getattr(result.step_view, "final_id", None)):
         return
     await _send_book_offer(message)
+    logger.info("book.offer shown chat_id=%s", message.chat.id)
+
+
 async def _handle_db_error(
     message: Message,
     state: FSMContext,
@@ -605,6 +615,32 @@ async def on_settings(message: Message, state: FSMContext) -> None:
 
 
 
+
+
+@router.message(Command("dev_id"), StateFilter("*"))
+async def on_dev_id(message: Message) -> None:
+    if not message.from_user:
+        return
+    if not can_use_dev_tools(message.from_user.id):
+        await message.answer("Dev tools недоступны.")
+        return
+    await message.answer(f"Ваш tg_id: {message.from_user.id}")
+
+
+@router.message(Command("dev_finish"), StateFilter("*"))
+async def on_dev_finish(message: Message) -> None:
+    if not message.from_user:
+        return
+    if not can_use_dev_tools(message.from_user.id):
+        await message.answer("Dev tools недоступны.")
+        return
+    ok, msg = fast_forward_to_final(message.from_user.id)
+    await message.answer(msg)
+    if ok:
+        await _send_book_offer(message)
+        logger.info("book.offer shown chat_id=%s source=dev_finish", message.chat.id)
+
+
 @router.message(Command("dev_ff"), StateFilter("*"))
 async def on_dev_ff(message: Message) -> None:
     if not message.from_user:
@@ -613,16 +649,26 @@ async def on_dev_ff(message: Message) -> None:
         await message.answer("Dev tools недоступны.")
         return
     to_step = 7
+    final_mode = False
     if message.text:
         parts = message.text.strip().split()
         if len(parts) >= 2:
-            try:
-                to_step = int(parts[1])
-            except ValueError:
-                await message.answer("Использование: /dev_ff 7")
-                return
-    ok, msg = fast_forward_active_session(message.from_user.id, to_step=to_step)
+            if parts[1].strip().lower() == "final":
+                final_mode = True
+            else:
+                try:
+                    to_step = int(parts[1])
+                except ValueError:
+                    await message.answer("Использование: /dev_ff 7 или /dev_ff final")
+                    return
+    if final_mode:
+        ok, msg = fast_forward_to_final(message.from_user.id)
+    else:
+        ok, msg = fast_forward_active_session(message.from_user.id, to_step=to_step)
     await message.answer(msg)
+    if ok and final_mode:
+        await _send_book_offer(message)
+        logger.info("book.offer shown chat_id=%s source=dev_ff_final", message.chat.id)
 
 
 @router.message(Command("dev_use_session"), StateFilter("*"))
@@ -810,20 +856,6 @@ async def on_book_buy(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await callback.message.answer("Запускаю сборку книги. Это займёт немного времени ⏳")
     await run_book_job(callback.message, session.__dict__, theme_title=session.theme_id)
-
-
-
-@router.callback_query(lambda query: query.data == "settings:child_name")
-async def on_settings_child_name(callback: CallbackQuery, state: FSMContext) -> None:
-    if not callback.message or not callback.from_user:
-        await callback.answer()
-        return
-    await state.set_state(L4.SETTINGS_CHILD_NAME)
-    await callback.message.answer(
-        "Введите имя ребёнка (1..32 символа).\n"
-        "Отправьте пустое сообщение или '-' чтобы сбросить имя."
-    )
-    await callback.answer()
 
 
 @router.message(L4.SETTINGS_CHILD_NAME)
@@ -1034,8 +1066,8 @@ def _locked_rows_from_content(session: object, step: int) -> list[list[dict]]:
 
 @router.callback_query(lambda query: query.data and query.data.startswith("l3:choice:"))
 async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
+    await safe_callback_answer(callback)
     if not callback.message or not callback.from_user:
-        await safe_callback_answer(callback)
         return
     if await state.get_state() == L3.FREE_TEXT:
         await _clear_l3_free_text_state(state)
@@ -1271,8 +1303,8 @@ async def on_locked_step(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(lambda query: query.data and query.data.startswith("l3:free_text"))
 async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
+    await safe_callback_answer(callback)
     if not callback.message or not callback.from_user:
-        await safe_callback_answer(callback)
         return
     payload = _parse_l3_free_text_callback(callback.data)
     if not payload:

@@ -18,10 +18,11 @@ from src.services.image_delivery import _resolve_storage_path
 logger = logging.getLogger(__name__)
 
 _BOOK_SAMPLE_PATH = Path("/app/apps/tg-bot/assets/book_sample.pdf")
-_BOOK_PROMPTS_DIR = Path("/app/content/prompts/book_rewrite")
+_CONTENT_ROOT = Path(os.getenv("SKAZKA_CONTENT_DIR", "/app/content"))
+_BOOK_PROMPTS_DIR = _CONTENT_ROOT / "prompts" / "book_rewrite"
 _BOOK_PROMPT_KEY_ENV = "SKAZKA_BOOK_REWRITE_PROMPT"
 _BOOK_MODEL_ENV = "SKAZKA_BOOK_REWRITE_MODEL"
-_DEV_FIXTURE_PATH = Path("/app/content/fixtures/dev_book_8_steps.json")
+_DEV_FIXTURE_PATH = _CONTENT_ROOT / "fixtures" / "dev_book_8_steps.json"
 _job_locks: dict[int, asyncio.Lock] = {}
 
 

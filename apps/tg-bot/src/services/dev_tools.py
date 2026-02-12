@@ -40,7 +40,9 @@ def can_use_dev_tools(tg_id: int) -> bool:
     if not dev_tools_enabled():
         return False
     admins = _admin_ids()
-    return True if not admins else tg_id in admins
+    if not admins:
+        return False
+    return tg_id in admins
 
 
 def _to_session(row: dict[str, Any]) -> Session:
@@ -196,3 +198,16 @@ def ensure_demo_session_ready(tg_id: int) -> Session:
     _fast_forward_session(tg_id, session.sid8, session.max_steps, session.step, to_step=7)
     refreshed = activate_session_for_user(tg_id, session.sid8)
     return refreshed or session
+
+
+def fast_forward_to_final(tg_id: int) -> tuple[bool, str]:
+    session = get_session(tg_id)
+    if session is None:
+        return False, "Нет активной сессии. Сначала начни или подключи /dev_use_session <sid8>."
+    return _fast_forward_session(
+        tg_id,
+        session.sid8,
+        session.max_steps,
+        session.step,
+        to_step=max(0, int(session.max_steps) - 1),
+    )

@@ -316,6 +316,44 @@ async def _maybe_send_book_offer(message: Message, result) -> None:
 
 def _book_offer_enabled() -> bool:
     raw = os.getenv("SKAZKA_BOOK_OFFER", "1").strip().lower()
+    if raw == "":
+        raw = "1"
+    return raw in {"1", "true", "yes", "on"}
+
+
+async def _send_book_offer(message: Message) -> None:
+    await message.answer(book_offer_text(), reply_markup=build_book_offer_keyboard())
+
+
+def _normalize_child_name(raw: str) -> str | None:
+    value = raw.strip()
+    if not value:
+        return None
+    if len(value) > 32:
+        value = value[:32]
+    return value
+
+
+
+async def _maybe_send_book_offer(message: Message, result) -> None:
+    if not _book_offer_enabled():
+        return
+    if not result or not getattr(result, "step_view", None):
+        return
+    if not (getattr(result, "final_id", None) or getattr(result.step_view, "final_id", None)):
+        return
+    await _send_book_offer(message)
+    logger.info(
+        "book.offer shown session_id=%s sid8=%s enabled=true chat_id=%s",
+        getattr(result, "session_id", None),
+        getattr(result, "sid8", None),
+        message.chat.id,
+    )
+
+
+
+def _book_offer_enabled() -> bool:
+    raw = os.getenv("SKAZKA_BOOK_OFFER", "1").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 

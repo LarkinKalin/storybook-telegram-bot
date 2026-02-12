@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from time import time
@@ -41,22 +42,6 @@ from src.services.content_stub import build_content_step
 from db.repos import session_events
 from src.services.theme_registry import registry
 from src.states import L3, L4, L5, UX
-from src.services.book_runtime import (
-    book_offer_text,
-    run_book_job,
-    run_dev_book_test_from_fixture,
-    run_dev_layout_test,
-    run_dev_rewrite_test,
-    send_sample_pdf,
-)
-from src.services.dev_tools import (
-    activate_session_for_user,
-    can_use_dev_tools,
-    ensure_demo_session_ready,
-    fast_forward_active_session,
-    fast_forward_to_final,
-    create_dev_book_session_from_fixture,
-)
 
 router = Router(name="l1")
 logger = logging.getLogger(__name__)
@@ -232,8 +217,8 @@ async def _send_settings_screen(message: Message) -> None:
     add_dev = bool(message.from_user and can_use_dev_tools(message.from_user.id))
     await _send_inline_screen(
         message,
-        "⚙ Настройки\n\nМожно сохранить имя ребёнка для сказок и будущей книжки.",
-        lambda: build_settings_keyboard(add_dev_tools=add_dev),
+        "⚙ Настройки\n\nПока настроек нет, скоро появятся.",
+        build_settings_keyboard,
     )
 
 
@@ -816,122 +801,7 @@ async def on_go_help(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await state.set_state(L4.HELP)
     await _send_help_screen(callback.message)
-    await safe_callback_answer(callback)
-
-
-
-@router.callback_query(lambda query: query.data == "settings:child_name")
-async def on_settings_child_name(callback: CallbackQuery, state: FSMContext) -> None:
-    if not callback.message or not callback.from_user:
-        await safe_callback_answer(callback)
-        return
-    await state.set_state(L4.SETTINGS_CHILD_NAME)
-    await callback.message.answer(
-        "Введите имя ребёнка (1..32 символа).\n"
-        "Отправьте пустое сообщение или '-' чтобы сбросить имя."
-    )
-    await safe_callback_answer(callback)
-
-
-@router.message(L4.SETTINGS_CHILD_NAME)
-async def on_settings_child_name_message(message: Message, state: FSMContext) -> None:
-    if not message.from_user:
-        return
-    raw = (message.text or "").strip()
-    normalized = None if raw in {"-", "—"} else _normalize_child_name(raw)
-    if raw and normalized is None and raw not in {"-", "—"}:
-        await message.answer("Имя должно быть от 1 до 32 символов.")
-        return
-    try:
-        user = users.get_or_create_by_tg_id(message.from_user.id)
-        users.update_child_name(int(user["id"]), normalized)
-    except Exception as exc:
-        await _handle_db_error(message, state, exc=exc)
-        return
-    await state.set_state(L4.SETTINGS)
-    if normalized:
-        await message.answer(f"Сохранил: {normalized}")
-    else:
-        await message.answer("Имя ребёнка сброшено.")
-    await _send_settings_screen(message)
-
-
-@router.callback_query(lambda query: query.data == "dev:book_layout_test")
-async def on_dev_book_layout_test(callback: CallbackQuery) -> None:
-    await safe_callback_answer(callback, "Готовлю PDF-верстку…")
-    if not callback.message or not callback.from_user:
-        return
-    if not can_use_dev_tools(callback.from_user.id):
-        await callback.message.answer("Dev tools недоступны.")
-        return
-    try:
-        session = ensure_demo_session_ready(callback.from_user.id)
-        await run_dev_layout_test(callback.message, session.id)
-    except Exception as exc:
-        logger.exception("dev.book_layout_test error", exc_info=exc)
-        await callback.message.answer("Не вышло собрать тестовый PDF.")
-
-
-@router.callback_query(lambda query: query.data == "dev:book_rewrite_test")
-async def on_dev_book_rewrite_test(callback: CallbackQuery) -> None:
-    await safe_callback_answer(callback, "Запускаю тест rewrite…")
-    if not callback.message or not callback.from_user:
-        return
-    if not can_use_dev_tools(callback.from_user.id):
-        await callback.message.answer("Dev tools недоступны.")
-        return
-    try:
-        session = ensure_demo_session_ready(callback.from_user.id)
-        await run_dev_rewrite_test(callback.message, session.__dict__, theme_title="Demo Book")
-    except Exception as exc:
-        logger.exception("dev.book_rewrite_test error", exc_info=exc)
-        await callback.message.answer("Не вышло сделать rewrite-тест.")
-
-
-@router.callback_query(lambda query: query.data == "dev:book_test")
-async def on_dev_book_test(callback: CallbackQuery, state: FSMContext) -> None:
-    await safe_callback_answer(callback, "Готовлю тестовую книгу…")
-    if not callback.message or not callback.from_user:
-        return
-    if not can_use_dev_tools(callback.from_user.id):
-        await callback.message.answer("Dev tools недоступны.")
-        return
-    try:
-        session = create_dev_book_session_from_fixture(callback.from_user.id)
-        await callback.message.answer(
-            f"Готово. Тестовая сессия {session.sid8} подготовлена из фикстуры.\n"
-            "Открываю оффер книги 👇"
-        )
-        await _send_book_offer(callback.message)
-        logger.info("book.offer shown session_id=%s sid8=%s enabled=true source=dev_book_test", session.id, session.sid8)
-    except Exception as exc:
-        logger.exception("dev.book_test error", exc_info=exc)
-        await callback.message.answer("Не вышло подготовить тестовую сессию книги. Попробуй ещё раз.")
-
-
-@router.callback_query(lambda query: query.data == "book:sample")
-async def on_book_sample(callback: CallbackQuery) -> None:
-    await safe_callback_answer(callback, "Отправляю образец…")
-    if not callback.message:
-        return
-    await send_sample_pdf(callback.message)
-
-
-@router.callback_query(lambda query: query.data == "book:buy")
-async def on_book_buy(callback: CallbackQuery, state: FSMContext) -> None:
-    await safe_callback_answer(callback, "Собираю книгу…")
-    if not callback.message or not callback.from_user:
-        return
-    try:
-        session = get_session(callback.from_user.id)
-    except Exception as exc:
-        await _handle_db_error(callback.message, state, exc=exc)
-        return
-    if not session:
-        await callback.message.answer("Нет активной или завершённой сессии для сборки книги.")
-        return
-    await callback.message.answer("Запускаю сборку книги. Это займёт немного времени ⏳")
-    await run_book_job(callback.message, session.__dict__, theme_title=session.theme_id)
+    await callback.answer()
 
 
 @router.message(L3.STEP)

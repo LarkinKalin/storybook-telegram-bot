@@ -39,10 +39,16 @@ from src.services.content_stub import build_content_step
 from db.repos import session_events
 from src.services.theme_registry import registry
 from src.states import L3, L4, L5, UX
-from src.services.book_runtime import book_offer_text, run_book_job, send_sample_pdf
+from src.services.book_runtime import (
+    book_offer_text,
+    run_book_job,
+    run_dev_book_test_from_fixture,
+    send_sample_pdf,
+)
 from src.services.dev_tools import (
     activate_session_for_user,
     can_use_dev_tools,
+    dev_tools_enabled,
     ensure_demo_session_ready,
     fast_forward_active_session,
 )
@@ -206,7 +212,7 @@ async def _send_shop_screen(message: Message) -> None:
 
 
 async def _send_settings_screen(message: Message) -> None:
-    add_dev = bool(message.from_user and can_use_dev_tools(message.from_user.id))
+    add_dev = dev_tools_enabled()
     await _send_inline_screen(
         message,
         "⚙ Настройки\n\nМожно сохранить имя ребёнка для сказок и будущей книжки.",
@@ -726,15 +732,13 @@ async def on_dev_book_test(callback: CallbackQuery, state: FSMContext) -> None:
     if not can_use_dev_tools(callback.from_user.id):
         await callback.answer("Недоступно", show_alert=True)
         return
+    await callback.answer("Собираю тестовую книгу…", show_alert=False)
     try:
         session = ensure_demo_session_ready(callback.from_user.id)
+        await run_dev_book_test_from_fixture(callback.message, session.id)
     except Exception as exc:
-        await _handle_db_error(callback.message, state, exc=exc)
-        await callback.answer()
-        return
-    await callback.message.answer("🧪 Запускаю тестовую сборку книги по demo-сессии...")
-    await run_book_job(callback.message, session.__dict__, theme_title="Demo Book")
-    await callback.answer()
+        logger.exception("dev.book_test error", exc_info=exc)
+        await callback.message.answer("Не вышло собрать тестовую книгу. Попробуй ещё раз.")
 
 
 @router.callback_query(lambda query: query.data == "book:sample")

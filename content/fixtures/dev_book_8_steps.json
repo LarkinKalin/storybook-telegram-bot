@@ -1,0 +1,14 @@
+{
+  "title": "Тестовая книжка",
+  "child_name": "Дружок",
+  "steps": [
+    {"step_index": 1, "text": "Шаг 1: герой просыпается в лесу.", "choices": [{"id": "a", "text": "Осмотреться"}], "chosen_choice_id": "a"},
+    {"step_index": 2, "text": "Шаг 2: находит тропинку к реке.", "choices": [{"id": "a", "text": "Идти к реке"}], "chosen_choice_id": "a"},
+    {"step_index": 3, "text": "Шаг 3: встречает говорящую птицу.", "choices": [{"id": "a", "text": "Поговорить"}], "chosen_choice_id": "a"},
+    {"step_index": 4, "text": "Шаг 4: узнаёт о мосте испытаний.", "choices": [{"id": "a", "text": "Принять вызов"}], "chosen_choice_id": "a"},
+    {"step_index": 5, "text": "Шаг 5: проходит первое испытание.", "choices": [{"id": "a", "text": "Продолжать"}], "chosen_choice_id": "a"},
+    {"step_index": 6, "text": "Шаг 6: помогает другу выбраться из ловушки.", "choices": [{"id": "a", "text": "Помочь"}], "chosen_choice_id": "a"},
+    {"step_index": 7, "text": "Шаг 7: открывает тайную дверь в башню.", "choices": [{"id": "a", "text": "Войти"}], "chosen_choice_id": "a"},
+    {"step_index": 8, "text": "Шаг 8: возвращается домой с новой мудростью.", "choices": [{"id": "a", "text": "Завершить"}], "chosen_choice_id": "a"}
+  ]
+}

@@ -61,3 +61,19 @@ def get_by_id(asset_id: int) -> dict | None:
             )
             row = cur.fetchone()
             return dict(row) if row else None
+
+
+def get_by_sha256(sha256: str) -> dict | None:
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM assets
+                WHERE sha256 = %s
+                LIMIT 1;
+                """,
+                (sha256,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None

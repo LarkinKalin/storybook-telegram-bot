@@ -40,7 +40,7 @@ def can_use_dev_tools(tg_id: int) -> bool:
     if not dev_tools_enabled():
         return False
     admins = _admin_ids()
-    return tg_id in admins if admins else False
+    return True if not admins else tg_id in admins
 
 
 def _to_session(row: dict[str, Any]) -> Session:

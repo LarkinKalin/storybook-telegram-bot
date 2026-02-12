@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 _BOOK_SAMPLE_PATH = Path("/app/apps/tg-bot/assets/book_sample.pdf")
 _BOOK_PROMPTS_DIR = Path("/app/content/prompts/book_rewrite")
 _BOOK_PROMPT_KEY_ENV = "SKAZKA_BOOK_REWRITE_PROMPT_KEY"
+_DEV_FIXTURE_PATH = Path("/app/content/fixtures/dev_book_8_steps.json")
 _job_locks: dict[int, asyncio.Lock] = {}
 
 
@@ -47,6 +48,62 @@ async def send_sample_pdf(message) -> None:
         caption="Вот пример книжки ✨",
     )
     logger.info("book.sample sent")
+
+
+async def run_dev_book_test_from_fixture(message, session_id: int) -> None:
+    current = book_jobs.get_by_session_kind(session_id)
+    if current and current.get("status") == "done" and current.get("result_pdf_asset_id"):
+        await _send_existing_pdf(message, int(current["result_pdf_asset_id"]))
+        return
+    fixture = _load_dev_book_fixture()
+    book_script = _build_book_script_from_fixture(fixture)
+    script_asset_id = _store_json_asset(session_id, book_script)
+    pdf_asset_id = _build_book_pdf(session_id, book_script)
+    book_jobs.upsert_status(
+        session_id,
+        status="done",
+        result_pdf_asset_id=pdf_asset_id,
+        script_json_asset_id=script_asset_id,
+        error_message=None,
+    )
+    await _send_existing_pdf(message, pdf_asset_id)
+
+
+def _load_dev_book_fixture() -> dict[str, Any]:
+    if _DEV_FIXTURE_PATH.exists():
+        payload = json.loads(_DEV_FIXTURE_PATH.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            return payload
+    steps = [
+        {
+            "step_index": idx,
+            "text": f"Тестовый шаг {idx}",
+            "choices": [{"id": "a", "text": "Выбор A"}],
+            "chosen_choice_id": "a",
+        }
+        for idx in range(1, 9)
+    ]
+    return {"title": "Тестовая книжка", "child_name": "Дружок", "steps": steps}
+
+
+def _build_book_script_from_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
+    steps = fixture.get("steps") if isinstance(fixture.get("steps"), list) else []
+    child_name = fixture.get("child_name") if isinstance(fixture.get("child_name"), str) else "Дружок"
+    title = fixture.get("title") if isinstance(fixture.get("title"), str) else "Тестовая книжка"
+    pages = []
+    for idx in range(1, 9):
+        step = steps[idx - 1] if idx - 1 < len(steps) and isinstance(steps[idx - 1], dict) else {}
+        step_text = step.get("text") if isinstance(step.get("text"), str) else f"Тестовый шаг {idx}"
+        pages.append({
+            "page": idx,
+            "text": f"{child_name}: {step_text}",
+            "illustration_brief": f"Плейсхолдер-иллюстрация, страница {idx}.",
+        })
+    return _validate_book_script({
+        "title": title,
+        "pages": pages,
+        "style_rules": "Плейсхолдерный стиль для dev-проверки PDF.",
+    })
 
 
 def build_book_input(session_row: dict[str, Any], theme_title: str | None = None) -> dict[str, Any]:
@@ -317,6 +374,9 @@ def _store_binary_asset(
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         path.write_bytes(content)
+    existing = assets.get_by_sha256(sha256)
+    if existing:
+        return int(existing["id"]), str(existing["storage_key"])
     asset_id = assets.insert_asset(
         kind=kind,
         storage_backend="fs",

@@ -222,7 +222,7 @@ def build_story_request(
     content: Dict,
     recaps: list,
     last_choice: object,
-    child_name: str | None,
+    child_name: str | None = None,
 ) -> Dict:
     resolved_child_name = (child_name or "").strip()
     child_name_for_story = resolved_child_name if resolved_child_name else "дружок"

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
 
 from db.conn import transaction
@@ -16,10 +16,10 @@ class L3ApplyPayload:
     deltas_json: dict[str, Any] | None
     step_result_json: dict[str, Any] | None
     meta_json: dict[str, Any] | None
-    facts_json: dict[str, Any] | None
-    finish_status: str | None
-    final_id: str | None
-    final_meta: dict[str, Any] | None
+    facts_json: dict[str, Any] = field(default_factory=dict)
+    finish_status: str | None = None
+    final_id: str | None = None
+    final_meta: dict[str, Any] | None = None
 
 
 @dataclass

@@ -141,6 +141,42 @@ def create_new_active(
             return dict(session_row)
 
 
+
+def activate_existing_session(user_id: int, tg_id: int, sid8: str) -> dict[str, Any] | None:
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM sessions
+                WHERE user_id = %s AND tg_id = %s AND sid8 = %s
+                LIMIT 1;
+                """,
+                (user_id, tg_id, sid8),
+            )
+            target = cur.fetchone()
+            if not target:
+                return None
+            cur.execute(
+                """
+                UPDATE sessions
+                SET status = 'ABORTED', updated_at = now()
+                WHERE user_id = %s AND status = 'ACTIVE' AND sid8 <> %s;
+                """,
+                (user_id, sid8),
+            )
+            cur.execute(
+                """
+                UPDATE sessions
+                SET status = 'ACTIVE', updated_at = now()
+                WHERE user_id = %s AND tg_id = %s AND sid8 = %s
+                RETURNING *;
+                """,
+                (user_id, tg_id, sid8),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
 def finish(session_id: int, status: str = "FINISHED") -> None:
     if status not in _ALLOWED_FINISH_STATUSES:
         raise ValueError("status must be FINISHED or ABORTED")

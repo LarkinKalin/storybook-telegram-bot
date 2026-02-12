@@ -40,6 +40,7 @@ from db.repos import session_events
 from src.services.theme_registry import registry
 from src.states import L3, L4, L5, UX
 from src.services.book_runtime import book_offer_text, run_book_job, send_sample_pdf
+from src.services.dev_tools import activate_session_for_user, can_use_dev_tools, fast_forward_active_session
 
 router = Router(name="l1")
 logger = logging.getLogger(__name__)
@@ -568,6 +569,49 @@ async def on_settings(message: Message, state: FSMContext) -> None:
     await state.set_state(L4.SETTINGS)
     await _send_settings_screen(message)
 
+
+
+
+@router.message(Command("dev_ff"), StateFilter("*"))
+async def on_dev_ff(message: Message) -> None:
+    if not message.from_user:
+        return
+    if not can_use_dev_tools(message.from_user.id):
+        await message.answer("Dev tools недоступны.")
+        return
+    to_step = 7
+    if message.text:
+        parts = message.text.strip().split()
+        if len(parts) >= 2:
+            try:
+                to_step = int(parts[1])
+            except ValueError:
+                await message.answer("Использование: /dev_ff 7")
+                return
+    ok, msg = fast_forward_active_session(message.from_user.id, to_step=to_step)
+    await message.answer(msg)
+
+
+@router.message(Command("dev_use_session"), StateFilter("*"))
+async def on_dev_use_session(message: Message) -> None:
+    if not message.from_user:
+        return
+    if not can_use_dev_tools(message.from_user.id):
+        await message.answer("Dev tools недоступны.")
+        return
+    sid8 = ""
+    if message.text:
+        parts = message.text.strip().split()
+        if len(parts) >= 2:
+            sid8 = parts[1].strip()
+    if not sid8:
+        await message.answer("Использование: /dev_use_session <sid8>")
+        return
+    session = activate_session_for_user(message.from_user.id, sid8)
+    if not session:
+        await message.answer("Сессия не найдена.")
+        return
+    await message.answer(f"Сессия подключена: {session.sid8}, текущий шаг {session.step + 1}.")
 
 @router.message(Command("menu"), StateFilter("*"))
 async def on_menu(message: Message, state: FSMContext) -> None:

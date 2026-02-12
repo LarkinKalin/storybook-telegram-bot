@@ -56,22 +56,13 @@ async def send_sample_pdf(message) -> None:
 
 
 async def run_dev_book_test_from_fixture(message, session_id: int) -> None:
-    current = book_jobs.get_by_session_kind(session_id)
-    if current and current.get("status") == "done" and current.get("result_pdf_asset_id"):
-        await _send_existing_pdf(message, int(current["result_pdf_asset_id"]))
-        return
     fixture = _load_dev_book_fixture()
     book_script = _build_book_script_from_fixture(fixture)
-    script_asset_id = _store_json_asset(session_id, book_script)
-    pdf_asset_id = _build_book_pdf(session_id, book_script)
-    book_jobs.upsert_status(
-        session_id,
-        status="done",
-        result_pdf_asset_id=pdf_asset_id,
-        script_json_asset_id=script_asset_id,
-        error_message=None,
+    pdf_bytes = _build_book_pdf_bytes(book_script, child_name=fixture.get("child_name"))
+    await message.answer_document(
+        document=BufferedInputFile(pdf_bytes, filename="dev_book_test.pdf"),
+        caption="🧪 Тестовая книга (fixture)",
     )
-    await _send_existing_pdf(message, pdf_asset_id)
 
 
 async def run_dev_layout_test(message, session_id: int) -> None:
@@ -321,13 +312,7 @@ def _build_placeholder_png(label: str) -> bytes:
     return bytes.fromhex("89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C4890000000A49444154789C6360000002000154A24F5D0000000049454E44AE426082")
 
 
-def _build_book_pdf(
-    session_id: int,
-    book_script: dict[str, Any],
-    *,
-    image_assets: list[int | None] | None = None,
-    child_name: str | None = None,
-) -> int:
+def _build_book_pdf_bytes(book_script: dict[str, Any], *, child_name: str | None = None) -> bytes:
     title = book_script.get("title") or "Сказка"
     lines = [title, f"Имя героя: {child_name or 'дружок'}", f"Дата: {datetime.utcnow().date().isoformat()}", ""]
     pages = book_script.get("pages") if isinstance(book_script.get("pages"), list) else []
@@ -335,7 +320,17 @@ def _build_book_pdf(
         lines.append(f"Страница {i}")
         lines.append(str(page.get("text") or ""))
         lines.append("")
-    pdf_bytes = _simple_pdf("\n".join(lines))
+    return _simple_pdf("\n".join(lines))
+
+
+def _build_book_pdf(
+    session_id: int,
+    book_script: dict[str, Any],
+    *,
+    image_assets: list[int | None] | None = None,
+    child_name: str | None = None,
+) -> int:
+    pdf_bytes = _build_book_pdf_bytes(book_script, child_name=child_name)
     digest = hashlib.sha256(pdf_bytes).hexdigest()
     asset_id, _ = _store_binary_asset("pdf", pdf_bytes, "application/pdf", digest)
     return asset_id

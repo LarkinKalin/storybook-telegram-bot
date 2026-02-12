@@ -265,11 +265,10 @@ async def _handle_db_error(
             req_id=req_id,
         )
     if exc is not None:
-        logger.error(
+        logger.exception(
             "db_unavailable reason=%s exc_class=%s",
             reason,
             type(exc).__name__,
-            exc_info=exc,
         )
     else:
         logger.error("db_unavailable reason=%s", reason)
@@ -346,6 +345,8 @@ def _req_id_from_update(message: Message | None, callback: CallbackQuery | None)
 def _db_error_reason(exc: Exception | None) -> str:
     if exc is None:
         return "db_unavailable"
+    if isinstance(exc, UnboundLocalError):
+        return "code_unbound_local_error"
     msg = str(exc).lower()
     if "does not exist" in msg or "undefined table" in msg:
         return "db_schema_missing"

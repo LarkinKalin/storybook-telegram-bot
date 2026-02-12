@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 from psycopg.rows import dict_row
 
 from db.conn import transaction
-from db.repos import l3_turns, sessions, users
+from db.repos import l3_turns, session_events, sessions, users
 from packages.engine.src.engine_v0_1 import init_state_v01
 from src.services.runtime_sessions import Session, get_session
 
@@ -15,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 _DEMO_THEME_ID = "dev_book_demo"
 _DEMO_PLAYER_NAME = "dev_book_demo"
+_CONTENT_ROOT = Path(os.getenv("SKAZKA_CONTENT_DIR", "/app/content"))
+_DEV_BOOK_FIXTURE_PATH = _CONTENT_ROOT / "fixtures" / "dev_book_8_steps.json"
 
 
 def dev_tools_enabled() -> bool:
@@ -211,3 +215,75 @@ def fast_forward_to_final(tg_id: int) -> tuple[bool, str]:
         session.step,
         to_step=max(0, int(session.max_steps) - 1),
     )
+
+
+def _load_dev_book_fixture() -> dict[str, Any]:
+    if _DEV_BOOK_FIXTURE_PATH.exists():
+        payload = json.loads(_DEV_BOOK_FIXTURE_PATH.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            return payload
+    steps = [
+        {
+            "step_index": i,
+            "text": f"[DEV_FIXTURE] Шаг {i}",
+            "choices": [{"id": "a", "text": "Вариант A"}],
+            "chosen_choice_id": "a",
+        }
+        for i in range(1, 9)
+    ]
+    return {"title": "Тестовая книжка", "child_name": "дружок", "steps": steps}
+
+
+def create_dev_book_session_from_fixture(tg_id: int) -> Session:
+    fixture = _load_dev_book_fixture()
+    user = users.get_or_create_by_tg_id(tg_id)
+    user_id = int(user["id"])
+    row = sessions.create_new_active(
+        user_id,
+        theme_id="test_book",
+        player_name="dev_book_fixture",
+        meta={"max_steps": 8},
+    )
+    session = _to_session(row)
+    steps = fixture.get("steps") if isinstance(fixture.get("steps"), list) else []
+    for idx in range(8):
+        source = steps[idx] if idx < len(steps) and isinstance(steps[idx], dict) else {}
+        step_text = source.get("text") if isinstance(source.get("text"), str) else f"[DEV_FIXTURE] Шаг {idx+1}"
+        raw_choices = source.get("choices") if isinstance(source.get("choices"), list) else []
+        protocol_choices: list[dict[str, str]] = []
+        for choice in raw_choices:
+            if not isinstance(choice, dict):
+                continue
+            cid = choice.get("id") or choice.get("choice_id")
+            ctext = choice.get("text") or choice.get("label")
+            if isinstance(cid, str) and isinstance(ctext, str):
+                protocol_choices.append({"id": cid, "text": ctext})
+        if not protocol_choices:
+            protocol_choices = [{"id": "a", "text": "Вариант A"}]
+        chosen_choice_id = source.get("chosen_choice_id") if isinstance(source.get("chosen_choice_id"), str) else protocol_choices[0]["id"]
+        step_payload = {
+            "step_index": idx + 1,
+            "narration_text": step_text,
+            "text": step_text,
+            "protocol_choices": protocol_choices,
+            "choices": [{"choice_id": c["id"], "label": c["text"]} for c in protocol_choices],
+            "chosen_choice_id": chosen_choice_id,
+            "story_step_json": {"text": step_text, "choices": [{"id": c["id"], "text": c["text"]} for c in protocol_choices]},
+            "allow_free_text": False,
+            "final_id": "dev_fixture_final" if idx == 7 else None,
+        }
+        session_events.append_event(
+            session_id=session.id,
+            step=idx,
+            step0=idx,
+            user_input="[DEV_FIXTURE]",
+            choice_id=chosen_choice_id,
+            llm_json={"dev_fixture": True},
+            deltas_json={"dev_fixture": True},
+            outcome="accepted",
+            step_result_json=step_payload,
+            meta_json={"dev_fixture": True},
+        )
+    sessions.update_step(session.id, 7)
+    refreshed = activate_session_for_user(tg_id, session.sid8)
+    return refreshed or session

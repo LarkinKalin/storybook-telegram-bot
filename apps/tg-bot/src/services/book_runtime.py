@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 _BOOK_SAMPLE_PATH = Path("/app/apps/tg-bot/assets/book_sample.pdf")
 _CONTENT_ROOT = Path(os.getenv("SKAZKA_CONTENT_DIR", "/app/content"))
 _BOOK_PROMPTS_DIR = _CONTENT_ROOT / "prompts" / "book_rewrite"
-_BOOK_PROMPT_KEY_ENV = "SKAZKA_BOOK_REWRITE_PROMPT"
+_BOOK_PROMPT_KEY_ENV = "SKAZKA_BOOK_REWRITE_PROMPT_KEY"
+_BOOK_PROMPT_OVERRIDE_ENV = "SKAZKA_BOOK_REWRITE_PROMPT"
 _BOOK_MODEL_ENV = "SKAZKA_BOOK_REWRITE_MODEL"
 _DEV_FIXTURE_PATH = _CONTENT_ROOT / "fixtures" / "dev_book_8_steps.json"
 _job_locks: dict[int, asyncio.Lock] = {}
@@ -35,7 +36,10 @@ def _session_lock(session_id: int) -> asyncio.Lock:
 
 
 def _images_enabled() -> bool:
-    return os.getenv("SKAZKA_BOOK_IMAGES", "1").strip().lower() in {"1", "true", "yes", "on"}
+    raw = os.getenv("SKAZKA_BOOK_IMAGES", "1").strip().lower()
+    if raw == "":
+        raw = "1"
+    return raw in {"1", "true", "yes", "on"}
 
 
 def book_offer_text() -> str:
@@ -101,8 +105,8 @@ def _build_book_script_from_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
     for idx in range(1, 9):
         step = steps[idx - 1] if idx - 1 < len(steps) and isinstance(steps[idx - 1], dict) else {}
         step_text = step.get("text") if isinstance(step.get("text"), str) else f"Тестовый шаг {idx}"
-        pages.append({"page": idx, "text": f"{child_name}: {step_text}", "image_prompt": f"Плейсхолдер, страница {idx}"})
-    return _validate_book_script({"title": title, "cover": {"subtitle": "dev", "image_prompt": "cover"}, "pages": pages})
+        pages.append({"page_no": idx, "heading": f"Страница {idx}", "text": f"{child_name}: {step_text}", "image_prompt": f"storybook style illustration page {idx}"})
+    return _validate_book_script({"title": title, "pages": pages})
 
 
 def build_book_input(session_row: dict[str, Any], theme_title: str | None = None) -> dict[str, Any]:
@@ -166,18 +170,19 @@ def _pick_style_reference(session_id: int) -> int | None:
 
 
 def _book_prompt_key() -> str:
-    key = os.getenv(_BOOK_PROMPT_KEY_ENV, "").strip()
-    if not key:
-        key = os.getenv("SKAZKA_BOOK_REWRITE_PROMPT_KEY", "v1_default").strip()
+    key = os.getenv(_BOOK_PROMPT_KEY_ENV, "v1_default").strip()
     return key or "v1_default"
 
 
 def _book_model_name() -> str:
     model = os.getenv(_BOOK_MODEL_ENV, "").strip()
-    return model or "default"
+    return model or "openrouter/kimi-k2"
 
 
 def _load_book_rewrite_prompt() -> str:
+    override = os.getenv(_BOOK_PROMPT_OVERRIDE_ENV, "").strip()
+    if override:
+        return override
     key = _book_prompt_key()
     path = _BOOK_PROMPTS_DIR / f"{key}.md"
     if not path.exists():
@@ -191,14 +196,37 @@ def _validate_book_script(script: dict[str, Any]) -> dict[str, Any]:
     pages = script.get("pages") if isinstance(script.get("pages"), list) else []
     if len(pages) != 8:
         raise ValueError(f"book_script pages must be 8, got={len(pages)}")
-    for page in pages:
+
+    normalized_pages: list[dict[str, Any]] = []
+    for index, page in enumerate(pages, start=1):
         if not isinstance(page, dict):
             raise ValueError("book_script invalid page type")
-        if not isinstance(page.get("text"), str) or not page.get("text", "").strip():
+        text = page.get("text")
+        image_prompt = page.get("image_prompt")
+        heading = page.get("heading")
+        page_no = page.get("page_no") if page.get("page_no") is not None else page.get("page")
+        if not isinstance(text, str) or not text.strip():
             raise ValueError("book_script page.text required")
-        if not isinstance(page.get("image_prompt"), str) or not page.get("image_prompt", "").strip():
+        if not isinstance(image_prompt, str) or not image_prompt.strip():
             raise ValueError("book_script page.image_prompt required")
-    return script
+        if not isinstance(heading, str) or not heading.strip():
+            heading = f"Страница {index}"
+        if not isinstance(page_no, int):
+            try:
+                page_no = int(page_no)
+            except Exception:
+                page_no = index
+        normalized_pages.append(
+            {
+                "page_no": page_no,
+                "heading": heading.strip(),
+                "text": text.strip(),
+                "image_prompt": image_prompt.strip(),
+            }
+        )
+
+    title = script.get("title") if isinstance(script.get("title"), str) and script.get("title").strip() else "Сказка"
+    return {"title": title.strip(), "pages": normalized_pages}
 
 
 def _step_choices_for_protocol(step_payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -238,7 +266,7 @@ def _run_rewrite_kimi(book_input: dict[str, Any]) -> dict[str, Any]:
         "story_request": {
             "prompt": prompt,
             "book_input": book_input,
-            "format": "JSON {title,cover{subtitle,image_prompt},pages[8]{page,text,image_prompt}}",
+            "format": "JSON {title,pages:[{page_no,heading,text,image_prompt}]}; exactly 8 pages",
         },
     }
     result = llm_generate(step_ctx)
@@ -257,8 +285,8 @@ def _build_book_script_fallback(book_input: dict[str, Any]) -> dict[str, Any]:
     pages = []
     for idx in range(1, 9):
         chunk = merged[(idx - 1) * 320 : idx * 320].strip() or "Новая сцена сказки."
-        pages.append({"page": idx, "text": f"{child_name} — {chunk}", "image_prompt": f"Детская книжная иллюстрация, страница {idx}. {chunk[:120]}"})
-    return {"title": f"Книжка: {book_input.get('theme_title') or book_input.get('theme_id') or 'Сказка'}", "cover": {"subtitle": child_name, "image_prompt": "Детская обложка книги"}, "pages": pages}
+        pages.append({"page_no": idx, "heading": f"Страница {idx}", "text": f"{child_name} — {chunk}", "image_prompt": f"Children's storybook illustration, consistent style, page {idx}. {chunk[:120]}"})
+    return {"title": f"Книжка: {book_input.get('theme_title') or book_input.get('theme_id') or 'Сказка'}", "pages": pages}
 
 
 async def run_book_job(message, session_row: dict[str, Any], theme_title: str | None = None) -> None:
@@ -326,7 +354,8 @@ def _build_book_pdf_bytes(book_script: dict[str, Any], *, child_name: str | None
     lines = [title, f"Имя героя: {child_name or 'дружок'}", f"Дата: {datetime.utcnow().date().isoformat()}", ""]
     pages = book_script.get("pages") if isinstance(book_script.get("pages"), list) else []
     for i, page in enumerate(pages, start=1):
-        lines.append(f"Страница {i}")
+        page_no = page.get("page_no") or i
+        lines.append(str(page.get("heading") or f"Страница {page_no}"))
         lines.append(str(page.get("text") or ""))
         lines.append("")
     return _simple_pdf("\n".join(lines))

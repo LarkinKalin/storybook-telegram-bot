@@ -127,7 +127,17 @@ def apply_l3_turn(
         finish_status = None
         final_id = step_log["final_id"]
         final_meta = step_log["final_meta"] or {}
+        if final_id is None and isinstance(step_result_json, dict):
+            sr_final = step_result_json.get("final_id")
+            if isinstance(sr_final, str) and sr_final.strip():
+                final_id = sr_final.strip()
         if final_id is None and new_state["step0"] >= new_state["n"] - 1:
+            final_id = f"final_step_{session_row['id']}_{new_state['step0'] + 1}"
+            finish_status = "FINISHED"
+            if isinstance(step_result_json, dict):
+                step_result_json["final_id"] = final_id
+                step_result_json.setdefault("choices", [])
+        if final_id and not finish_status:
             finish_status = "FINISHED"
         facts_json = session_row.get("facts_json") or {}
         if not isinstance(facts_json, dict):
@@ -150,7 +160,7 @@ def apply_l3_turn(
             "state_before": state_before,
             "state_after": new_state,
             "milestone_id": step_log.get("milestone_id"),
-            "final_id": step_log.get("final_id"),
+            "final_id": final_id,
         }
         history = facts_json.get("engine_history")
         if not isinstance(history, list):

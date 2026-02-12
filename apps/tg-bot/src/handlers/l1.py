@@ -261,6 +261,52 @@ def _normalize_child_name(raw: str) -> str | None:
 
 async def _maybe_send_book_offer(message: Message, result) -> None:
     if not _book_offer_enabled():
+        logger.info("book.offer skip reason=disabled chat_id=%s", message.chat.id)
+        return
+    if not result:
+        logger.info("book.offer skip reason=no_result chat_id=%s", message.chat.id)
+        return
+    if not getattr(result, "step_view", None):
+        logger.info("book.offer skip reason=no_step_view chat_id=%s", message.chat.id)
+        return
+    final_id = getattr(result, "final_id", None) or getattr(result.step_view, "final_id", None)
+    if not final_id:
+        logger.info("book.offer skip reason=no_final chat_id=%s", message.chat.id)
+        return
+    await _send_book_offer(message)
+    logger.info(
+        "book.offer sent session_id=%s sid8=%s final_id=%s enabled=true chat_id=%s",
+        getattr(result, "session_id", None),
+        getattr(result, "sid8", None),
+        final_id,
+        message.chat.id,
+    )
+
+
+
+def _book_offer_enabled() -> bool:
+    raw = os.getenv("SKAZKA_BOOK_OFFER", "1").strip().lower()
+    if raw == "":
+        raw = "1"
+    return raw in {"1", "true", "yes", "on"}
+
+
+async def _send_book_offer(message: Message) -> None:
+    await message.answer(book_offer_text(), reply_markup=build_book_offer_keyboard())
+
+
+def _normalize_child_name(raw: str) -> str | None:
+    value = raw.strip()
+    if not value:
+        return None
+    if len(value) > 32:
+        value = value[:32]
+    return value
+
+
+
+async def _maybe_send_book_offer(message: Message, result) -> None:
+    if not _book_offer_enabled():
         return
     if not result or not getattr(result, "step_view", None):
         return

@@ -27,7 +27,15 @@ def build_final_step_result(
     *,
     theme_id: str | None = None,
     req_id: str | None = None,
+    child_name: str | None = None,
 ) -> Dict:
+    raw = (child_name or "").strip()
+    child_name_for_story = raw if raw else "дружок"
+    logger.info(
+        "llm.story_request child_name_present=%s child_name_len=%s",
+        "true" if bool(raw) else "false",
+        len(raw),
+    )
     if final_id:
         final_text = (
             f"Финал {final_id}.\n"
@@ -45,7 +53,7 @@ def build_final_step_result(
             "expected_type": "story_final",
             "final_id": final_id,
             "theme_id": theme_id,
-        "child_profile": {"name": child_name_for_story},
+            "child_profile": {"name": child_name_for_story},
             "format": "Верни JSON формата {text}.",
         },
     }
@@ -97,6 +105,7 @@ def build_step_result(
             final_id=None,
             theme_id=session_row.get("theme_id"),
             req_id=req_id,
+            child_name=session_row.get("child_name"),
         )
     content = build_content_step(session_row["theme_id"], state["step0"], state)
     facts_json = session_row.get("facts_json") or {}

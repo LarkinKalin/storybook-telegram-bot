@@ -6,6 +6,7 @@ from time import time
 from aiogram import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.exceptions import TelegramBadRequest
 
 from src.keyboards.l1 import build_l1_keyboard
 from src.keyboards.l2 import build_l2_keyboard
@@ -18,6 +19,16 @@ from src.services.image_delivery import resolve_story_step_ui, schedule_image_de
 from src.states import L3, UX
 
 router = Router(name="l2")
+
+
+async def safe_callback_answer(callback: CallbackQuery, text: str | None = None, **kwargs) -> None:
+    try:
+        if text is not None:
+            await callback.answer(text, **kwargs)
+        else:
+            await callback.answer(**kwargs)
+    except TelegramBadRequest as exc:
+        logger.warning("callback.answer skipped reason=%s", exc)
 logger = logging.getLogger(__name__)
 
 
@@ -66,7 +77,7 @@ async def _render_l2(message: Message, page_index: int, edit: bool) -> None:
 @router.callback_query(lambda query: query.data == "menu")
 async def on_menu(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     await state.set_state(UX.l1)
     try:
@@ -78,38 +89,38 @@ async def on_menu(callback: CallbackQuery, state: FSMContext) -> None:
         "🏠 Главное меню",
         reply_markup=build_l1_keyboard(active),
     )
-    await callback.answer()
+    await safe_callback_answer(callback)
 
 
 @router.callback_query(lambda query: query.data == "go:l2")
 async def on_go_l2(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message:
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     await state.set_state(UX.l2)
     await _render_l2(callback.message, 0, edit=True)
-    await callback.answer()
+    await safe_callback_answer(callback)
 
 
 @router.callback_query(lambda query: query.data and query.data.startswith("pg2:"))
 async def on_page(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message:
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     raw_page = callback.data.split(":", 1)[1] if callback.data else "0"
     page_index = _clamp_page(raw_page)
     await state.set_state(UX.l2)
     await _render_l2(callback.message, page_index, edit=True)
-    await callback.answer()
+    await safe_callback_answer(callback)
 
 
 @router.callback_query(lambda query: query.data and query.data.startswith("t:"))
 async def on_theme(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message:
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     if not callback.from_user:
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     theme_id = callback.data.split(":", 1)[1] if callback.data else ""
     theme = registry.get_theme(theme_id)
@@ -129,7 +140,7 @@ async def on_theme(callback: CallbackQuery, state: FSMContext) -> None:
             confirm_text,
             reply_markup=build_new_story_confirm_keyboard(theme["id"]),
         )
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
 
     await _start_theme_session(callback.message, state, callback.from_user.id, theme)
@@ -137,7 +148,7 @@ async def on_theme(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(lambda query: query.data and query.data.startswith("new:yes:"))
 async def on_new_story_confirm(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer("Ок")
+    await safe_callback_answer(callback, "Ок")
     if not callback.message:
         return
     if not callback.from_user:

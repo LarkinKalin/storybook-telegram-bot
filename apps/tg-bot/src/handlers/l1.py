@@ -7,6 +7,7 @@ from aiogram import Router
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.exceptions import TelegramBadRequest
 
 from src.handlers.l2 import open_l2
 from src.keyboards.l1 import L1Label, build_l1_keyboard
@@ -169,6 +170,18 @@ async def open_l1(message: Message, state: FSMContext, user_id: int | None = Non
 
 def _is_private(message: Message) -> bool:
     return message.chat.type == "private"
+
+
+async def safe_callback_answer(callback: CallbackQuery, text: str | None = None, **kwargs) -> None:
+    try:
+        if text is not None:
+            await callback.answer(text, **kwargs)
+        else:
+            await callback.answer(**kwargs)
+    except TelegramBadRequest as exc:
+        logger.warning("callback.answer skipped reason=%s", exc)
+
+
 
 
 async def _send_inline_screen(
@@ -663,30 +676,140 @@ async def on_go_l1(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message:
         return
     await open_l1(callback.message, state, user_id=callback.from_user.id)
-    await callback.answer()
+    await safe_callback_answer(callback)
 
 
 @router.callback_query(lambda query: query.data == "go:start")
 async def on_go_start(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message:
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     await open_l2(callback.message, state)
-    await callback.answer()
+    await safe_callback_answer(callback)
 
 
 @router.callback_query(lambda query: query.data == "go:help")
 async def on_go_help(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message:
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     if callback.message.chat.type != "private":
         await callback.message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     await state.set_state(L4.HELP)
     await _send_help_screen(callback.message)
-    await callback.answer()
+    await safe_callback_answer(callback)
+
+
+
+@router.callback_query(lambda query: query.data == "settings:child_name")
+async def on_settings_child_name(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        await safe_callback_answer(callback)
+        return
+    await state.set_state(L4.SETTINGS_CHILD_NAME)
+    await callback.message.answer(
+        "Введите имя ребёнка (1..32 символа).\n"
+        "Отправьте пустое сообщение или '-' чтобы сбросить имя."
+    )
+    await safe_callback_answer(callback)
+
+
+@router.message(L4.SETTINGS_CHILD_NAME)
+async def on_settings_child_name_message(message: Message, state: FSMContext) -> None:
+    if not message.from_user:
+        return
+    raw = (message.text or "").strip()
+    normalized = None if raw in {"-", "—"} else _normalize_child_name(raw)
+    if raw and normalized is None and raw not in {"-", "—"}:
+        await message.answer("Имя должно быть от 1 до 32 символов.")
+        return
+    try:
+        user = users.get_or_create_by_tg_id(message.from_user.id)
+        users.update_child_name(int(user["id"]), normalized)
+    except Exception as exc:
+        await _handle_db_error(message, state, exc=exc)
+        return
+    await state.set_state(L4.SETTINGS)
+    if normalized:
+        await message.answer(f"Сохранил: {normalized}")
+    else:
+        await message.answer("Имя ребёнка сброшено.")
+    await _send_settings_screen(message)
+
+
+@router.callback_query(lambda query: query.data == "dev:book_layout_test")
+async def on_dev_book_layout_test(callback: CallbackQuery) -> None:
+    await safe_callback_answer(callback, "Готовлю PDF-верстку…")
+    if not callback.message or not callback.from_user:
+        return
+    if not can_use_dev_tools(callback.from_user.id):
+        await callback.message.answer("Dev tools недоступны.")
+        return
+    try:
+        session = ensure_demo_session_ready(callback.from_user.id)
+        await run_dev_layout_test(callback.message, session.id)
+    except Exception as exc:
+        logger.exception("dev.book_layout_test error", exc_info=exc)
+        await callback.message.answer("Не вышло собрать тестовый PDF.")
+
+
+@router.callback_query(lambda query: query.data == "dev:book_rewrite_test")
+async def on_dev_book_rewrite_test(callback: CallbackQuery) -> None:
+    await safe_callback_answer(callback, "Запускаю тест rewrite…")
+    if not callback.message or not callback.from_user:
+        return
+    if not can_use_dev_tools(callback.from_user.id):
+        await callback.message.answer("Dev tools недоступны.")
+        return
+    try:
+        session = ensure_demo_session_ready(callback.from_user.id)
+        await run_dev_rewrite_test(callback.message, session.__dict__, theme_title="Demo Book")
+    except Exception as exc:
+        logger.exception("dev.book_rewrite_test error", exc_info=exc)
+        await callback.message.answer("Не вышло сделать rewrite-тест.")
+
+
+@router.callback_query(lambda query: query.data == "dev:book_test")
+async def on_dev_book_test(callback: CallbackQuery, state: FSMContext) -> None:
+    await safe_callback_answer(callback, "Готовлю тестовую книгу…")
+    if not callback.message or not callback.from_user:
+        return
+    if not can_use_dev_tools(callback.from_user.id):
+        await callback.message.answer("Dev tools недоступны.")
+        return
+    try:
+        session = ensure_demo_session_ready(callback.from_user.id)
+        await run_dev_book_test_from_fixture(callback.message, session.id)
+    except Exception as exc:
+        logger.exception("dev.book_test error", exc_info=exc)
+        await callback.message.answer("Не вышло собрать тестовую книгу. Попробуй ещё раз.")
+
+
+@router.callback_query(lambda query: query.data == "book:sample")
+async def on_book_sample(callback: CallbackQuery) -> None:
+    await safe_callback_answer(callback, "Отправляю образец…")
+    if not callback.message:
+        return
+    await send_sample_pdf(callback.message)
+
+
+@router.callback_query(lambda query: query.data == "book:buy")
+async def on_book_buy(callback: CallbackQuery, state: FSMContext) -> None:
+    await safe_callback_answer(callback, "Собираю книгу…")
+    if not callback.message or not callback.from_user:
+        return
+    try:
+        session = get_session(callback.from_user.id)
+    except Exception as exc:
+        await _handle_db_error(callback.message, state, exc=exc)
+        return
+    if not session:
+        await callback.message.answer("Нет активной или завершённой сессии для сборки книги.")
+        return
+    await callback.message.answer("Запускаю сборку книги. Это займёт немного времени ⏳")
+    await run_book_job(callback.message, session.__dict__, theme_title=session.theme_id)
 
 
 
@@ -912,7 +1035,7 @@ def _locked_rows_from_content(session: object, step: int) -> list[list[dict]]:
 @router.callback_query(lambda query: query.data and query.data.startswith("l3:choice:"))
 async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     if await state.get_state() == L3.FREE_TEXT:
         await _clear_l3_free_text_state(state)
@@ -926,7 +1049,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             step0=None,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Кнопка недействительна или устарела.")
+        await safe_callback_answer(callback, "Кнопка недействительна или устарела.")
         return
     choice_id, sid8, st2 = payload
     try:
@@ -941,7 +1064,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             req_id=_req_id_from_update(callback.message, callback),
             exc=exc,
         )
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     if not session or not _is_session_valid(session):
         _log_l3_step(
@@ -952,7 +1075,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             step0=getattr(session, "step", None),
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Сессия устарела. Нажми /resume.")
+        await safe_callback_answer(callback, "Сессия устарела. Нажми /resume.")
         return
     if session.last_step_message_id and callback.message.message_id != session.last_step_message_id:
         _log_l3_step(
@@ -963,7 +1086,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             step0=session.step,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Ход уже принят. Сообщение устарело.")
+        await safe_callback_answer(callback, "Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
         return
     if st2 < session.step:
@@ -975,7 +1098,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             step0=session.step,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Ход уже принят. Сообщение устарело.")
+        await safe_callback_answer(callback, "Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
         return
     if st2 > session.step:
@@ -987,7 +1110,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             step0=session.step,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Ход уже принят. Сообщение устарело.")
+        await safe_callback_answer(callback, "Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
         return
     state_snapshot = ensure_engine_state(session.__dict__)
@@ -1017,7 +1140,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             req_id=_req_id_from_update(callback.message, callback),
             exc=exc,
         )
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     if result is None:
         _log_l3_step(
@@ -1028,7 +1151,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             step0=st2,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Сессия устарела. Нажми /resume.")
+        await safe_callback_answer(callback, "Сессия устарела. Нажми /resume.")
         return
     if result.status == "invalid":
         _log_l3_step(
@@ -1039,7 +1162,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             step0=st2,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Ход отклонён. Попробуй ещё раз.")
+        await safe_callback_answer(callback, "Ход отклонён. Попробуй ещё раз.")
         return
     if result.status == "stale":
         _log_l3_step(
@@ -1050,7 +1173,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             step0=result.step,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Ход уже принят. Сообщение устарело.")
+        await safe_callback_answer(callback, "Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
         return
     if result.status == "duplicate":
@@ -1097,7 +1220,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         )
         await _maybe_send_book_offer(callback.message, result)
         await state.set_state(L3.STEP)
-        await callback.answer("Ход уже принят. Сообщение устарело.")
+        await safe_callback_answer(callback, "Ход уже принят. Сообщение устарело.")
         return
     if choice_label:
         await callback.message.answer(f"Твой выбор: {choice_label}")
@@ -1112,7 +1235,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
     await _maybe_send_book_offer(callback.message, result)
     await state.set_state(L3.STEP)
     await _clear_l3_free_text_state(state)
-    await callback.answer()
+    await safe_callback_answer(callback)
 
 
 @router.callback_query(lambda query: query.data and query.data.startswith("locked:"))
@@ -1143,13 +1266,13 @@ async def on_locked_step(callback: CallbackQuery, state: FSMContext) -> None:
             session = None
         if session:
             await _deliver_current_step(callback.message, state, session)
-    await callback.answer("Этот шаг уже сыгран")
+    await safe_callback_answer(callback, "Этот шаг уже сыгран")
 
 
 @router.callback_query(lambda query: query.data and query.data.startswith("l3:free_text"))
 async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     payload = _parse_l3_free_text_callback(callback.data)
     if not payload:
@@ -1161,7 +1284,7 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             step0=None,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Кнопка недействительна или устарела.")
+        await safe_callback_answer(callback, "Кнопка недействительна или устарела.")
         return
     sid8, st2 = payload
     try:
@@ -1176,7 +1299,7 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             req_id=_req_id_from_update(callback.message, callback),
             exc=exc,
         )
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     if not session or not _is_session_valid(session):
         _log_l3_step(
@@ -1187,7 +1310,7 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             step0=getattr(session, "step", None),
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Сессия устарела. Нажми /resume.")
+        await safe_callback_answer(callback, "Сессия устарела. Нажми /resume.")
         return
     if session.last_step_message_id and callback.message.message_id != session.last_step_message_id:
         _log_l3_step(
@@ -1198,7 +1321,7 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             step0=session.step,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Ход уже принят. Сообщение устарело.")
+        await safe_callback_answer(callback, "Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
         return
     if st2 < session.step:
@@ -1210,7 +1333,7 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             step0=session.step,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Ход уже принят. Сообщение устарело.")
+        await safe_callback_answer(callback, "Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
         return
     if st2 > session.step:
@@ -1222,7 +1345,7 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             step0=session.step,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Ход уже принят. Сообщение устарело.")
+        await safe_callback_answer(callback, "Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
         return
     if not is_step_current(callback.from_user.id, sid8, st2):
@@ -1234,7 +1357,7 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             step0=session.step,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Ход уже принят. Сообщение устарело.")
+        await safe_callback_answer(callback, "Ход уже принят. Сообщение устарело.")
         await _deliver_current_step(callback.message, state, session)
         return
     if session_events.exists_for_step(session.id, st2):
@@ -1246,7 +1369,7 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
             step0=st2,
             req_id=_req_id_from_update(callback.message, callback),
         )
-        await callback.answer("Этот шаг уже сыгран")
+        await safe_callback_answer(callback, "Этот шаг уже сыгран")
         await _deliver_current_step(callback.message, state, session)
         return
     await state.set_state(L3.FREE_TEXT)
@@ -1255,7 +1378,7 @@ async def on_l3_free_text(callback: CallbackQuery, state: FSMContext) -> None:
         "Напиши свой вариант текста. Я запомню его как ход.",
         reply_markup=ReplyKeyboardRemove(),
     )
-    await callback.answer()
+    await safe_callback_answer(callback)
 
 
 @router.message(L3.FREE_TEXT)
@@ -1441,24 +1564,24 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
 @router.callback_query(lambda query: query.data == "go:shop")
 async def on_go_shop(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message:
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     if callback.message.chat.type != "private":
         await callback.message.answer("Я работаю только в личных сообщениях. Напиши мне в личку.")
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     await state.set_state(L4.SHOP)
     await _send_shop_screen(callback.message)
-    await callback.answer()
+    await safe_callback_answer(callback)
 
 
 @router.callback_query(lambda query: query.data == "go:continue")
 async def on_go_continue(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message:
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     if not callback.from_user:
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
     await do_continue(callback.message, state, user_id=callback.from_user.id)
     try:
@@ -1469,7 +1592,7 @@ async def on_go_continue(callback: CallbackQuery, state: FSMContext) -> None:
         )
     except Exception:
         pass
-    await callback.answer()
+    await safe_callback_answer(callback)
 
 
 @router.message(Command("start"), StateFilter("*"))

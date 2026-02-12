@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 _BOOK_SAMPLE_PATH = Path("/app/apps/tg-bot/assets/book_sample.pdf")
 _BOOK_PROMPTS_DIR = Path("/app/content/prompts/book_rewrite")
-_BOOK_PROMPT_KEY_ENV = "SKAZKA_BOOK_REWRITE_PROMPT_KEY"
+_BOOK_PROMPT_KEY_ENV = "SKAZKA_BOOK_REWRITE_PROMPT"
+_BOOK_MODEL_ENV = "SKAZKA_BOOK_REWRITE_MODEL"
 _DEV_FIXTURE_PATH = Path("/app/content/fixtures/dev_book_8_steps.json")
 _job_locks: dict[int, asyncio.Lock] = {}
 
@@ -164,8 +165,15 @@ def _pick_style_reference(session_id: int) -> int | None:
 
 
 def _book_prompt_key() -> str:
-    key = os.getenv(_BOOK_PROMPT_KEY_ENV, "v1_default").strip()
+    key = os.getenv(_BOOK_PROMPT_KEY_ENV, "").strip()
+    if not key:
+        key = os.getenv("SKAZKA_BOOK_REWRITE_PROMPT_KEY", "v1_default").strip()
     return key or "v1_default"
+
+
+def _book_model_name() -> str:
+    model = os.getenv(_BOOK_MODEL_ENV, "").strip()
+    return model or "default"
 
 
 def _load_book_rewrite_prompt() -> str:
@@ -222,7 +230,7 @@ def _step_narration(step_payload: dict[str, Any]) -> str:
 
 def _run_rewrite_kimi(book_input: dict[str, Any]) -> dict[str, Any]:
     prompt_key = _book_prompt_key()
-    logger.info("book.rewrite started prompt_key=%s", prompt_key)
+    logger.info("book.rewrite started prompt_key=%s model=%s", prompt_key, _book_model_name())
     prompt = _load_book_rewrite_prompt()
     step_ctx = {
         "expected_type": "book_rewrite_v1",

@@ -84,7 +84,7 @@ def create_new_active(
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
-                SELECT id, tg_id, display_name
+                SELECT id, tg_id, display_name, child_name
                 FROM users
                 WHERE id = %s;
                 """,
@@ -119,11 +119,12 @@ def create_new_active(
                         max_steps,
                         player_name,
                         params_json,
-                        facts_json
+                        facts_json,
+                        child_name
                     )
-                    VALUES (%s, %s, %s, 'ACTIVE', %s, 0, %s, %s, %s, '{}'::jsonb)
+                    VALUES (%s, %s, %s, 'ACTIVE', %s, 0, %s, %s, %s, '{}'::jsonb, %s)
                     ON CONFLICT (sid8) DO NOTHING
-                    RETURNING id, user_id, tg_id, sid8, status, theme_id, step, max_steps, player_name;
+                    RETURNING id, user_id, tg_id, sid8, status, theme_id, step, max_steps, player_name, child_name;
                     """,
                     (
                         user_id,
@@ -133,6 +134,7 @@ def create_new_active(
                         max_steps,
                         resolved_player_name,
                         to_json(payload),
+                        user_row.get("child_name"),
                     ),
                 )
                 session_row = cur.fetchone()

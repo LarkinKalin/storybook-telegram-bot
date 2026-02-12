@@ -23,6 +23,7 @@ class Session:
     ending_id: str | None
     last_step_message_id: int | None
     last_step_sent_at: int | None
+    child_name: str | None
 
 
 def _to_epoch(value: datetime | int | None) -> int | None:
@@ -49,6 +50,7 @@ def _row_to_session(row: dict | None) -> Session | None:
         ending_id=row.get("ending_id"),
         last_step_message_id=row.get("last_step_message_id"),
         last_step_sent_at=_to_epoch(row.get("last_step_sent_at")),
+        child_name=row.get("child_name"),
     )
 
 

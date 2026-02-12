@@ -24,7 +24,7 @@ def get_or_create_by_tg_id(
                 DO UPDATE SET
                     tg_username = COALESCE(EXCLUDED.tg_username, users.tg_username),
                     updated_at = now()
-                RETURNING id, tg_id, display_name;
+                RETURNING id, tg_id, display_name, child_name;
                 """,
                 (tg_id, resolved_display_name, tg_username),
             )
@@ -32,3 +32,17 @@ def get_or_create_by_tg_id(
             if row is None:
                 raise RuntimeError("Failed to fetch user row")
             return dict(row)
+
+
+def update_child_name(user_id: int, child_name: str | None) -> None:
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE users
+                SET child_name = %s,
+                    updated_at = now()
+                WHERE id = %s;
+                """,
+                (child_name, user_id),
+            )

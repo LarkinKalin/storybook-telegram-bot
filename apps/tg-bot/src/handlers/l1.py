@@ -14,6 +14,7 @@ from src.keyboards.l3 import build_locked_keyboard
 from src.keyboards.help import build_help_keyboard
 from src.keyboards.settings import build_settings_keyboard
 from src.keyboards.shop import build_shop_keyboard
+from src.keyboards.book import build_book_offer_keyboard
 from src.keyboards.why import build_why_keyboard
 from src.services.l3_runtime import apply_l3_turn
 from src.services.runtime_sessions import (
@@ -33,11 +34,12 @@ from src.services.ui_delivery import (
     _normalize_content,
 )
 from src.services.image_delivery import resolve_story_step_ui, schedule_image_delivery
-from db.repos import ui_events
+from db.repos import ui_events, users
 from src.services.content_stub import build_content_step
 from db.repos import session_events
 from src.services.theme_registry import registry
 from src.states import L3, L4, L5, UX
+from src.services.book_runtime import book_offer_text, run_book_job, send_sample_pdf
 
 router = Router(name="l1")
 logger = logging.getLogger(__name__)
@@ -200,11 +202,33 @@ async def _send_shop_screen(message: Message) -> None:
 async def _send_settings_screen(message: Message) -> None:
     await _send_inline_screen(
         message,
-        "⚙ Настройки\n\nПока настроек нет, скоро появятся.",
+        "⚙ Настройки\n\nМожно сохранить имя ребёнка для сказок и будущей книжки.",
         build_settings_keyboard,
     )
 
 
+
+
+async def _send_book_offer(message: Message) -> None:
+    await message.answer(book_offer_text(), reply_markup=build_book_offer_keyboard())
+
+
+def _normalize_child_name(raw: str) -> str | None:
+    value = raw.strip()
+    if not value:
+        return None
+    if len(value) > 32:
+        value = value[:32]
+    return value
+
+
+
+async def _maybe_send_book_offer(message: Message, result) -> None:
+    if not result or not getattr(result, "step_view", None):
+        return
+    if not (getattr(result, "final_id", None) or getattr(result.step_view, "final_id", None)):
+        return
+    await _send_book_offer(message)
 async def _handle_db_error(
     message: Message,
     state: FSMContext,
@@ -591,6 +615,72 @@ async def on_go_help(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+
+@router.callback_query(lambda query: query.data == "settings:child_name")
+async def on_settings_child_name(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        await callback.answer()
+        return
+    await state.set_state(L4.SETTINGS_CHILD_NAME)
+    await callback.message.answer(
+        "Введите имя ребёнка (1..32 символа).\n"
+        "Отправьте пустое сообщение или '-' чтобы сбросить имя."
+    )
+    await callback.answer()
+
+
+@router.message(L4.SETTINGS_CHILD_NAME)
+async def on_settings_child_name_message(message: Message, state: FSMContext) -> None:
+    if not message.from_user:
+        return
+    raw = (message.text or "").strip()
+    normalized = None if raw in {"-", "—"} else _normalize_child_name(raw)
+    if raw and normalized is None and raw not in {"-", "—"}:
+        await message.answer("Имя должно быть от 1 до 32 символов.")
+        return
+    try:
+        user = users.get_or_create_by_tg_id(message.from_user.id)
+        users.update_child_name(int(user["id"]), normalized)
+    except Exception as exc:
+        await _handle_db_error(message, state, exc=exc)
+        return
+    await state.set_state(L4.SETTINGS)
+    if normalized:
+        await message.answer(f"Сохранил: {normalized}")
+    else:
+        await message.answer("Имя ребёнка сброшено.")
+    await _send_settings_screen(message)
+
+
+@router.callback_query(lambda query: query.data == "book:sample")
+async def on_book_sample(callback: CallbackQuery) -> None:
+    if not callback.message:
+        await callback.answer()
+        return
+    await send_sample_pdf(callback.message)
+    await callback.answer()
+
+
+@router.callback_query(lambda query: query.data == "book:buy")
+async def on_book_buy(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        await callback.answer()
+        return
+    try:
+        session = get_session(callback.from_user.id)
+    except Exception as exc:
+        await _handle_db_error(callback.message, state, exc=exc)
+        await callback.answer()
+        return
+    if not session:
+        await callback.message.answer("Нет активной или завершённой сессии для сборки книги.")
+        await callback.answer()
+        return
+    await callback.message.answer("Запускаю сборку книги. Это займёт немного времени ⏳")
+    await run_book_job(callback.message, session.__dict__, theme_title=session.theme_id)
+    await callback.answer()
+
+
 @router.message(L3.STEP)
 @router.message(L4.HELP)
 @router.message(L4.SHOP)
@@ -887,6 +977,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
             theme_id=result.theme_id,
             total_steps=session.max_steps,
         )
+        await _maybe_send_book_offer(callback.message, result)
         await state.set_state(L3.STEP)
         await callback.answer("Ход уже принят. Сообщение устарело.")
         return
@@ -900,6 +991,7 @@ async def on_l3_choice(callback: CallbackQuery, state: FSMContext) -> None:
         theme_id=result.theme_id,
         total_steps=session.max_steps,
     )
+    await _maybe_send_book_offer(callback.message, result)
     await state.set_state(L3.STEP)
     await _clear_l3_free_text_state(state)
     await callback.answer()
@@ -1155,6 +1247,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             req_id=_req_id_from_update(message, None),
         )
         await message.answer("Ход отклонён. Попробуй ещё раз.")
+        await _maybe_send_book_offer(message, result)
         await _clear_l3_free_text_state(state)
         return
     if result.status == "stale":
@@ -1210,6 +1303,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
             theme_id=result.theme_id,
             total_steps=session.max_steps,
         )
+        await _maybe_send_book_offer(message, result)
         await _clear_l3_free_text_state(state)
         return
     await message.answer(f"Твой выбор: {message.text}")
@@ -1221,6 +1315,7 @@ async def on_l3_free_text_message(message: Message, state: FSMContext) -> None:
         theme_id=result.theme_id,
         total_steps=session.max_steps,
     )
+    await _maybe_send_book_offer(message, result)
     await state.set_state(L3.STEP)
     await _clear_l3_free_text_state(state)
 

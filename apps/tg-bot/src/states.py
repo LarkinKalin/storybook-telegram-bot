@@ -15,6 +15,7 @@ class L4(StatesGroup):
     HELP = State()
     SHOP = State()
     SETTINGS = State()
+    SETTINGS_CHILD_NAME = State()
 
 
 class L5(StatesGroup):

@@ -40,10 +40,12 @@ def build_final_step_result(
         "req_id": req_id,
         "final_id": final_id,
         "theme_id": theme_id,
+        "child_profile": {"name": child_name_for_story},
         "story_request": {
             "expected_type": "story_final",
             "final_id": final_id,
             "theme_id": theme_id,
+        "child_profile": {"name": child_name_for_story},
             "format": "Верни JSON формата {text}.",
         },
     }
@@ -52,6 +54,13 @@ def build_final_step_result(
         llm_text = llm_result.parsed_json.get("text")
         if isinstance(llm_text, str) and llm_text.strip():
             final_text = llm_text
+    resolved_child_name = (child_name or "").strip()
+    child_name_for_story = resolved_child_name if resolved_child_name else "дружок"
+    logger.info(
+        "llm.story_request child_name_present=%s child_name_len=%s",
+        "true" if bool(resolved_child_name) else "false",
+        len(resolved_child_name),
+    )
     return {
         "text": final_text,
         "choices": [],
@@ -119,6 +128,7 @@ def build_step_result(
         content=content,
         recaps=recaps,
         last_choice=last_choice,
+        child_name=session_row.get("child_name"),
     )
     step_ctx = {
         "expected_type": expected_type_for_step(state["step0"], state["n"]),
@@ -212,7 +222,15 @@ def build_story_request(
     content: Dict,
     recaps: list,
     last_choice: object,
+    child_name: str | None,
 ) -> Dict:
+    resolved_child_name = (child_name or "").strip()
+    child_name_for_story = resolved_child_name if resolved_child_name else "дружок"
+    logger.info(
+        "llm.story_request child_name_present=%s child_name_len=%s",
+        "true" if bool(resolved_child_name) else "false",
+        len(resolved_child_name),
+    )
     return {
         "expected_type": expected_type_for_step(state["step0"], state["n"]),
         "scene_text": content["scene_text"],
@@ -224,6 +242,7 @@ def build_story_request(
         "step": state.get("step0"),
         "total_steps": state.get("n"),
         "theme_id": theme_id,
+        "child_profile": {"name": child_name_for_story},
         "recaps": recaps,
         "last_choice": last_choice,
         "state": {

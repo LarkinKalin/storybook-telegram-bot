@@ -109,6 +109,21 @@ def apply_l3_turn(
                 state=new_state,
                 req_id=req_id,
             )
+        if isinstance(step_result_json, dict):
+            step_result_json.setdefault("step_index", int(new_state.get("step0", 0)) + 1)
+            step_result_json.setdefault("narration_text", step_result_json.get("text") or "")
+            if isinstance(step_result_json.get("choices"), list):
+                normalized_choices = []
+                for ch in step_result_json.get("choices", []):
+                    if not isinstance(ch, dict):
+                        continue
+                    cid = ch.get("choice_id") or ch.get("id")
+                    label = ch.get("label") or ch.get("text")
+                    if isinstance(cid, str) and isinstance(label, str):
+                        normalized_choices.append({"id": cid, "text": label})
+                step_result_json["protocol_choices"] = normalized_choices
+            step_result_json["chosen_choice_id"] = turn.get("choice_id")
+            step_result_json["story_step_json"] = copy.deepcopy(step_result_json)
         finish_status = None
         final_id = step_log["final_id"]
         final_meta = step_log["final_meta"] or {}

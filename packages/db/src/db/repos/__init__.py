@@ -1,5 +1,6 @@
 from db.repos import (
     assets,
+    book_jobs,
     confirm_requests,
     l3_turns,
     payments,
@@ -13,6 +14,7 @@ from db.repos import (
 
 __all__ = [
     "assets",
+    "book_jobs",
     "confirm_requests",
     "l3_turns",
     "payments",

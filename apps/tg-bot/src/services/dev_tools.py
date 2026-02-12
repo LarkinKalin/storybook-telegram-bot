@@ -5,6 +5,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from psycopg.rows import dict_row
 
@@ -208,13 +209,84 @@ def fast_forward_to_final(tg_id: int) -> tuple[bool, str]:
     session = get_session(tg_id)
     if session is None:
         return False, "Нет активной сессии. Сначала начни или подключи /dev_use_session <sid8>."
-    return _fast_forward_session(
-        tg_id,
-        session.sid8,
-        session.max_steps,
-        session.step,
-        to_step=max(0, int(session.max_steps) - 1),
+
+    final_step0 = max(0, int(session.max_steps) - 1)
+    sid8 = session.sid8
+    if int(session.step) < final_step0:
+        ok, msg = _fast_forward_session(tg_id, sid8, session.max_steps, session.step, to_step=final_step0)
+        if not ok:
+            return ok, msg
+
+    refreshed = get_session(tg_id)
+    if refreshed is None:
+        return False, "Не удалось обновить активную сессию после fast-forward."
+
+    final_id = f"dev_final_{uuid4().hex[:8]}"
+
+    def _apply_final(session_row: dict):
+        state = _ensure_session_engine_state(session_row)
+        new_state = dict(state)
+        new_state["step0"] = final_step0
+        return l3_turns.L3ApplyPayload(
+            new_state=new_state,
+            llm_json={"dev_finish": True},
+            deltas_json={"dev_finish": True},
+            step_result_json={
+                "step_index": final_step0 + 1,
+                "text": "[DEV] Finished",
+                "narration_text": "[DEV] Finished",
+                "choices": [],
+                "protocol_choices": [],
+                "chosen_choice_id": None,
+                "story_step_json": {"text": "[DEV] Finished", "choices": []},
+                "final_id": final_id,
+                "allow_free_text": False,
+            },
+            meta_json={"dev_finish": True, "final_id": final_id},
+            finish_status="FINISHED",
+            final_id=final_id,
+            final_meta={"dev_finish": True},
+        )
+
+    result = l3_turns.apply_l3_turn_atomic(
+        tg_id=tg_id,
+        sid8=sid8,
+        expected_step=final_step0,
+        step=final_step0,
+        user_input="[DEV_FINISH]",
+        choice_id="dev_finish",
+        base_meta_json={"dev_finish": True},
+        apply_fn=_apply_final,
     )
+    if result is None:
+        return False, "Сессия не найдена для dev_finish."
+    if result.outcome not in {"accepted", "duplicate"}:
+        return False, f"dev_finish остановлен: {result.outcome}."
+
+    if result.outcome == "duplicate":
+        with transaction() as conn:
+            row = sessions.get_by_tg_id_sid8_for_update(conn, tg_id=tg_id, sid8=sid8)
+            if not row:
+                return False, "Сессия не найдена при обновлении финала."
+            event = session_events.get_by_step(conn, session_id=int(row["id"]), step=final_step0)
+            if event:
+                payload = event.get("step_result_json") if isinstance(event.get("step_result_json"), dict) else {}
+                payload = dict(payload)
+                payload["final_id"] = final_id
+                payload.setdefault("text", "[DEV] Finished")
+                payload.setdefault("choices", [])
+                session_events.update_event_payload(
+                    conn,
+                    event_id=int(event["id"]),
+                    llm_json=event.get("llm_json") if isinstance(event.get("llm_json"), dict) else {"dev_finish": True},
+                    deltas_json=event.get("deltas_json") if isinstance(event.get("deltas_json"), dict) else {"dev_finish": True},
+                    outcome="accepted",
+                    step_result_json=payload,
+                    meta_json={"dev_finish": True, "final_id": final_id},
+                )
+            sessions.finish_with_final_in_tx(conn, int(row["id"]), final_id, {"dev_finish": True})
+
+    return True, f"Финал проставлен. final_id={final_id}, step={final_step0 + 1}."
 
 
 def _load_dev_book_fixture() -> dict[str, Any]:

@@ -64,3 +64,4 @@ YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINA
 2026-02-12 | TG.8.2.XX.BLOCKER_FIX | DONE | Fixed UnboundLocalError in final step + safe callback ack helper + DB-free dev fixture PDF send
 2026-02-12 | TG.8.2.XX.OFFER_DEV_FINAL | DONE | Final-step book offer flag/logging + immediate callback ACK on L3 callbacks + strict dev admin gate + /dev_id and /dev_finish commands
 2026-02-12 | TG.8.2.XX.BOOK_V1_FIX2 | DONE | Book offer default-on for empty env + fixture session seeding for dev book test + rewrite prompt key/override hardening + SQL snippets
+2026-02-12 | TG.8.2.XX.DEV_DB_PDF | DONE | Dev book test now uses DB source session + background ACK-safe generation, /dev_finish writes real final_id, and compose forwards book env flags

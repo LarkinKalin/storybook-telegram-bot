@@ -101,10 +101,11 @@ def build_step_result(
     state = state or ensure_engine_state(session_row)
     req_id = _ensure_req_id(req_id)
     if state["step0"] >= state["n"] - 1:
+        resolved_req_id = _ensure_req_id(req_id)
         return build_final_step_result(
-            final_id=None,
+            final_id=f"final_{resolved_req_id[:8]}",
             theme_id=session_row.get("theme_id"),
-            req_id=req_id,
+            req_id=resolved_req_id,
             child_name=session_row.get("child_name"),
         )
     content = build_content_step(session_row["theme_id"], state["step0"], state)

@@ -11,9 +11,19 @@ from typing import Any
 
 from aiogram.types import BufferedInputFile
 
-from db.repos import assets, book_jobs, session_images
+from db.conn import transaction
+from db.repos import assets, book_jobs, session_images, sessions, users
 from packages.llm.src import generate as llm_generate
 from src.services.image_delivery import _resolve_storage_path
+
+try:
+    from reportlab.lib.pagesizes import A5
+    from reportlab.lib.utils import simpleSplit
+    from reportlab.pdfgen import canvas
+except Exception:  # pragma: no cover - optional runtime dependency
+    A5 = None
+    simpleSplit = None
+    canvas = None
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +33,8 @@ _BOOK_PROMPTS_DIR = _CONTENT_ROOT / "prompts" / "book_rewrite"
 _BOOK_PROMPT_KEY_ENV = "SKAZKA_BOOK_REWRITE_PROMPT_KEY"
 _BOOK_PROMPT_OVERRIDE_ENV = "SKAZKA_BOOK_REWRITE_PROMPT"
 _BOOK_MODEL_ENV = "SKAZKA_BOOK_REWRITE_MODEL"
+_BOOK_REWRITE_ENABLED_ENV = "SKAZKA_BOOK_REWRITE"
+_DEV_BOOK_SOURCE_SID8_ENV = "SKAZKA_DEV_BOOK_SOURCE_SID8"
 _DEV_FIXTURE_PATH = _CONTENT_ROOT / "fixtures" / "dev_book_8_steps.json"
 _job_locks: dict[int, asyncio.Lock] = {}
 
@@ -39,6 +51,11 @@ def _images_enabled() -> bool:
     raw = os.getenv("SKAZKA_BOOK_IMAGES", "1").strip().lower()
     if raw == "":
         raw = "1"
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _rewrite_enabled() -> bool:
+    raw = os.getenv(_BOOK_REWRITE_ENABLED_ENV, "0").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
@@ -289,6 +306,55 @@ def _build_book_script_fallback(book_input: dict[str, Any]) -> dict[str, Any]:
     return {"title": f"Книжка: {book_input.get('theme_title') or book_input.get('theme_id') or 'Сказка'}", "pages": pages}
 
 
+
+
+def pick_dev_source_session(tg_id: int) -> dict[str, Any] | None:
+    forced_sid8 = os.getenv(_DEV_BOOK_SOURCE_SID8_ENV, "").strip()
+    if forced_sid8:
+        row = sessions.get_by_tg_id_sid8(tg_id, forced_sid8)
+        if row:
+            return row
+
+    user = users.get_or_create_by_tg_id(tg_id)
+    user_id = int(user["id"])
+    active = sessions.get_active(user_id)
+    if active:
+        return active
+
+    from psycopg.rows import dict_row
+
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT s.*
+                FROM sessions s
+                JOIN (
+                    SELECT se.session_id,
+                           COUNT(*) FILTER (WHERE COALESCE(se.step_result_json->>'text','') !~ '^\\[DEV') AS real_steps
+                    FROM session_events se
+                    GROUP BY se.session_id
+                ) x ON x.session_id = s.id
+                WHERE s.tg_id = %s
+                  AND x.real_steps >= 3
+                ORDER BY s.id DESC
+                LIMIT 1;
+                """,
+                (tg_id,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+
+async def run_dev_book_test_from_db(message, tg_id: int) -> None:
+    session_row = pick_dev_source_session(tg_id)
+    if not session_row:
+        await message.answer("Не нашёл подходящую сессию в БД для теста книги.")
+        return
+    await message.answer(f"⏳ Генерирую PDF из сессии {session_row.get('sid8')}…")
+    await run_book_job(message, session_row, theme_title=session_row.get("theme_id"))
+
+
 async def run_book_job(message, session_row: dict[str, Any], theme_title: str | None = None) -> None:
     lock = _session_lock(session_row["id"])
     async with lock:
@@ -305,7 +371,11 @@ async def run_book_job(message, session_row: dict[str, Any], theme_title: str | 
         logger.info("book.job status=running session_id=%s", session_row["id"])
         try:
             book_input = build_book_input(session_row, theme_title=theme_title)
-            script = _run_rewrite_kimi(book_input)
+            if _rewrite_enabled():
+                script = _run_rewrite_kimi(book_input)
+            else:
+                script = _build_book_script_fallback(book_input)
+                logger.info("book.rewrite skipped reason=disabled")
             script_asset_id = _store_json_asset(session_row["id"], script)
             image_assets = await _generate_book_images(script, book_input.get("style_ref_asset_id"))
             logger.info("book.images ok count=%s", len([x for x in image_assets if x is not None]))
@@ -351,14 +421,53 @@ def _build_placeholder_png(label: str) -> bytes:
 
 def _build_book_pdf_bytes(book_script: dict[str, Any], *, child_name: str | None = None) -> bytes:
     title = book_script.get("title") or "Сказка"
-    lines = [title, f"Имя героя: {child_name or 'дружок'}", f"Дата: {datetime.utcnow().date().isoformat()}", ""]
     pages = book_script.get("pages") if isinstance(book_script.get("pages"), list) else []
-    for i, page in enumerate(pages, start=1):
-        page_no = page.get("page_no") or i
-        lines.append(str(page.get("heading") or f"Страница {page_no}"))
-        lines.append(str(page.get("text") or ""))
-        lines.append("")
-    return _simple_pdf("\n".join(lines))
+
+    if canvas is None or A5 is None or simpleSplit is None:
+        lines = [title, f"Имя героя: {child_name or 'дружок'}", f"Дата: {datetime.utcnow().date().isoformat()}", ""]
+        for i, page in enumerate(pages, start=1):
+            page_no = page.get("page_no") or i
+            lines.append(str(page.get("heading") or f"Страница {page_no}"))
+            lines.append(str(page.get("text") or ""))
+            lines.append("")
+        return _simple_pdf("\n".join(lines))
+
+    from io import BytesIO
+
+    buf = BytesIO()
+    page_w, page_h = A5
+    c = canvas.Canvas(buf, pagesize=A5)
+
+    c.setTitle(str(title))
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(36, page_h - 56, str(title))
+    c.setFont("Helvetica", 11)
+    c.drawString(36, page_h - 78, f"Имя героя: {child_name or 'дружок'}")
+    c.drawString(36, page_h - 94, f"Дата: {datetime.utcnow().date().isoformat()}")
+    c.setFont("Helvetica", 9)
+    c.drawRightString(page_w - 24, 20, "1")
+    c.showPage()
+
+    for idx, page in enumerate(pages, start=1):
+        page_no = page.get("page_no") or idx
+        heading = str(page.get("heading") or f"Страница {page_no}")
+        text = str(page.get("text") or "")
+        c.setFont("Helvetica-Bold", 13)
+        c.drawString(24, page_h - 40, heading)
+        c.setFont("Helvetica", 10)
+        wrapped = simpleSplit(text, "Helvetica", 10, page_w - 48)
+        y = page_h - 62
+        for line in wrapped:
+            c.drawString(24, y, line)
+            y -= 13
+            if y < 34:
+                break
+        c.setFont("Helvetica", 9)
+        c.drawRightString(page_w - 24, 20, str(idx + 1))
+        c.showPage()
+
+    c.save()
+    return buf.getvalue()
 
 
 def _build_book_pdf(

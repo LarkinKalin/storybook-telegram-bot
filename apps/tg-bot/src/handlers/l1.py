@@ -726,13 +726,12 @@ async def on_settings_child_name_message(message: Message, state: FSMContext) ->
 
 @router.callback_query(lambda query: query.data == "dev:book_test")
 async def on_dev_book_test(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer("Готовлю тестовую книгу…")
     if not callback.message or not callback.from_user:
-        await callback.answer()
         return
     if not can_use_dev_tools(callback.from_user.id):
-        await callback.answer("Недоступно", show_alert=True)
+        await callback.message.answer("Dev tools недоступны.")
         return
-    await callback.answer("Собираю тестовую книгу…", show_alert=False)
     try:
         session = ensure_demo_session_ready(callback.from_user.id)
         await run_dev_book_test_from_fixture(callback.message, session.id)

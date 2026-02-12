@@ -280,6 +280,7 @@ async def _maybe_send_book_offer(message: Message, result) -> None:
         getattr(result, "sid8", None),
         final_id,
         message.chat.id,
+<<<<<<< ours
     )
 
 
@@ -356,6 +357,8 @@ async def _maybe_send_book_offer(message: Message, result) -> None:
         getattr(result, "session_id", None),
         getattr(result, "sid8", None),
         message.chat.id,
+=======
+>>>>>>> theirs
     )
 
 

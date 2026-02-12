@@ -10,13 +10,15 @@ from typing import Any
 
 from aiogram.types import BufferedInputFile
 
-from db.repos import assets, book_jobs, session_events, session_images
+from db.repos import assets, book_jobs, session_images
 from packages.llm.src.openrouter_image_provider import generate_i2i, generate_t2i
 from src.services.image_delivery import _resolve_assets_root, _resolve_storage_path
 
 logger = logging.getLogger(__name__)
 
 _BOOK_SAMPLE_PATH = Path("/app/apps/tg-bot/assets/book_sample.pdf")
+_BOOK_PROMPTS_DIR = Path("/app/content/prompts/book_rewrite")
+_BOOK_PROMPT_KEY_ENV = "SKAZKA_BOOK_REWRITE_PROMPT_KEY"
 _job_locks: dict[int, asyncio.Lock] = {}
 
 
@@ -80,14 +82,13 @@ def _load_session_steps(session_id: int) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for row in rows:
         sr = row.get("step_result_json") if isinstance(row.get("step_result_json"), dict) else {}
-        choices = sr.get("choices") if isinstance(sr.get("choices"), list) else []
         items.append(
             {
-                "step_index": int(row["step"]) + 1,
-                "narration_text": sr.get("text") or "",
-                "choices": choices,
-                "chosen_choice_id": row.get("choice_id"),
-                "story_step_json": sr,
+                "step_index": int(sr.get("step_index") or int(row["step"]) + 1),
+                "narration_text": _step_narration(sr),
+                "choices": _step_choices_for_protocol(sr),
+                "chosen_choice_id": sr.get("chosen_choice_id") or row.get("choice_id"),
+                "story_step_json": sr.get("story_step_json") if isinstance(sr.get("story_step_json"), dict) else sr,
             }
         )
     return items
@@ -106,7 +107,66 @@ def _pick_style_reference(session_id: int) -> int | None:
     return None
 
 
+def _book_prompt_key() -> str:
+    key = os.getenv(_BOOK_PROMPT_KEY_ENV, "v1_default").strip()
+    return key or "v1_default"
+
+
+def _load_book_rewrite_prompt() -> str:
+    key = _book_prompt_key()
+    path = _BOOK_PROMPTS_DIR / f"{key}.md"
+    if not path.exists():
+        logger.warning("book.prompt missing key=%s fallback=v1_default", key)
+        path = _BOOK_PROMPTS_DIR / "v1_default.md"
+    if not path.exists():
+        return "Сделай цельную детскую книжку на 8 страниц, JSON-only."
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _validate_book_script(script: dict[str, Any]) -> dict[str, Any]:
+    pages = script.get("pages") if isinstance(script.get("pages"), list) else []
+    if len(pages) != 8:
+        raise ValueError(f"book_script pages must be 8, got={len(pages)}")
+    return script
+
+
+def _step_choices_for_protocol(step_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    if isinstance(step_payload.get("protocol_choices"), list) and step_payload.get("protocol_choices"):
+        normalized = []
+        for item in step_payload.get("protocol_choices", []):
+            if not isinstance(item, dict):
+                continue
+            cid = item.get("id")
+            text = item.get("text")
+            if isinstance(cid, str) and isinstance(text, str):
+                normalized.append({"id": cid, "text": text})
+        if normalized:
+            return normalized
+    choices = step_payload.get("choices") if isinstance(step_payload.get("choices"), list) else []
+    normalized = []
+    for item in choices:
+        if not isinstance(item, dict):
+            continue
+        cid = item.get("choice_id") or item.get("id")
+        text = item.get("label") or item.get("text")
+        if isinstance(cid, str) and isinstance(text, str):
+            normalized.append({"id": cid, "text": text})
+    return normalized
+
+
+def _step_narration(step_payload: dict[str, Any]) -> str:
+    narration = step_payload.get("narration_text")
+    if isinstance(narration, str) and narration.strip():
+        return narration
+    text = step_payload.get("text")
+    if isinstance(text, str):
+        return text
+    return ""
+
+
 def _build_book_script(book_input: dict[str, Any]) -> dict[str, Any]:
+    rewrite_prompt = _load_book_rewrite_prompt()
+    logger.info("book.rewrite prompt_key=%s", _book_prompt_key())
     child_name = book_input.get("child_name") or "дружок"
     source = [s.get("narration_text", "") for s in book_input.get("steps", []) if s.get("narration_text")]
     merged = " ".join(source)[:2400]
@@ -120,11 +180,14 @@ def _build_book_script(book_input: dict[str, Any]) -> dict[str, Any]:
                 "illustration_brief": f"Детская книжная иллюстрация. Страница {idx}. {chunk[:140]}",
             }
         )
-    return {
+    script = {
         "title": f"Книжка: {book_input.get('theme_title') or book_input.get('theme_id') or 'Сказка'}",
         "pages": pages,
         "style_rules": "Единый мягкий стиль детской книжной иллюстрации, тёплая палитра, без текста.",
+        "rewrite_prompt_key": _book_prompt_key(),
+        "rewrite_prompt_preview": rewrite_prompt[:200],
     }
+    return _validate_book_script(script)
 
 
 async def run_book_job(message, session_row: dict[str, Any], theme_title: str | None = None) -> None:
@@ -173,6 +236,9 @@ async def _generate_book_images(book_script: dict[str, Any], style_ref_asset_id:
     pages = book_script.get("pages") if isinstance(book_script.get("pages"), list) else []
     out: list[int | None] = []
     logger.info("book.images started pages=%s", len(pages))
+    if os.getenv("SKAZKA_STEP_IMAGES", "0").strip().lower() not in {"1", "true", "yes", "on"}:
+        logger.info("book.images skipped reason=feature_disabled")
+        return [None for _ in pages]
     ref_payload = _load_asset_payload(style_ref_asset_id) if style_ref_asset_id else None
     ref_bytes = ref_payload[0] if ref_payload else None
     ref_mime = ref_payload[1] if ref_payload else None

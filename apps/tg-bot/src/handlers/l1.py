@@ -40,7 +40,12 @@ from db.repos import session_events
 from src.services.theme_registry import registry
 from src.states import L3, L4, L5, UX
 from src.services.book_runtime import book_offer_text, run_book_job, send_sample_pdf
-from src.services.dev_tools import activate_session_for_user, can_use_dev_tools, fast_forward_active_session
+from src.services.dev_tools import (
+    activate_session_for_user,
+    can_use_dev_tools,
+    ensure_demo_session_ready,
+    fast_forward_active_session,
+)
 
 router = Router(name="l1")
 logger = logging.getLogger(__name__)
@@ -201,10 +206,11 @@ async def _send_shop_screen(message: Message) -> None:
 
 
 async def _send_settings_screen(message: Message) -> None:
+    add_dev = bool(message.from_user and can_use_dev_tools(message.from_user.id))
     await _send_inline_screen(
         message,
         "⚙ Настройки\n\nМожно сохранить имя ребёнка для сказок и будущей книжки.",
-        build_settings_keyboard,
+        lambda: build_settings_keyboard(add_dev_tools=add_dev),
     )
 
 
@@ -251,9 +257,14 @@ async def _handle_db_error(
             req_id=req_id,
         )
     if exc is not None:
-        logger.error("DB operation failed: %s", reason, exc_info=exc)
+        logger.error(
+            "db_unavailable reason=%s exc_class=%s",
+            reason,
+            type(exc).__name__,
+            exc_info=exc,
+        )
     else:
-        logger.error("DB operation failed: %s", reason)
+        logger.error("db_unavailable reason=%s", reason)
     await message.answer("⚠️ База данных временно недоступна. Попробуй позже.")
     await state.set_state(UX.l1)
     await message.answer("🏠 Главное меню", reply_markup=build_l1_keyboard(False))
@@ -613,6 +624,17 @@ async def on_dev_use_session(message: Message) -> None:
         return
     await message.answer(f"Сессия подключена: {session.sid8}, текущий шаг {session.step + 1}.")
 
+@router.message(Command("dev_seed"), StateFilter("*"))
+async def on_dev_seed(message: Message) -> None:
+    if not message.from_user:
+        return
+    if not can_use_dev_tools(message.from_user.id):
+        await message.answer("Dev tools недоступны.")
+        return
+    session = ensure_demo_session_ready(message.from_user.id)
+    await message.answer(f"Demo session готова: {session.sid8}, шаг {session.step + 1}.")
+
+
 @router.message(Command("menu"), StateFilter("*"))
 async def on_menu(message: Message, state: FSMContext) -> None:
     await open_l1(message, state)
@@ -694,6 +716,25 @@ async def on_settings_child_name_message(message: Message, state: FSMContext) ->
     else:
         await message.answer("Имя ребёнка сброшено.")
     await _send_settings_screen(message)
+
+
+@router.callback_query(lambda query: query.data == "dev:book_test")
+async def on_dev_book_test(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        await callback.answer()
+        return
+    if not can_use_dev_tools(callback.from_user.id):
+        await callback.answer("Недоступно", show_alert=True)
+        return
+    try:
+        session = ensure_demo_session_ready(callback.from_user.id)
+    except Exception as exc:
+        await _handle_db_error(callback.message, state, exc=exc)
+        await callback.answer()
+        return
+    await callback.message.answer("🧪 Запускаю тестовую сборку книги по demo-сессии...")
+    await run_book_job(callback.message, session.__dict__, theme_title="Demo Book")
+    await callback.answer()
 
 
 @router.callback_query(lambda query: query.data == "book:sample")

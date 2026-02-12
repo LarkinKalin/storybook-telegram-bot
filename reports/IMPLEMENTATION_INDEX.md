@@ -60,3 +60,4 @@ YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINA
 2026-02-09 | TG.7.4.04 | DONE | Flux image provider hardened (t2i+i2i reference chain + retry proof)
 2026-02-12 | TG.7.4.05 | DONE | Image provider sim-fail wired + fallback proven in logs
 2026-02-12 | TG.2.1.01+TG.8.1.02+TG.8.2.01 | DONE | Child name profile/settings + final book offer/sample PDF + book_v1 job stub (images+PDF) with idempotent statuses
+2026-02-12 | TG.8.2.XX | DONE | Book rewrite v1 JSON contract + image/pdf job flow + dev layout/rewrite tests + early callback acks

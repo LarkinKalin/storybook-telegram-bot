@@ -73,7 +73,6 @@ async def on_menu(callback: CallbackQuery, state: FSMContext) -> None:
         active = has_active(callback.from_user.id)
     except Exception:
         await _handle_db_error(callback.message, state)
-        await callback.answer()
         return
     await callback.message.answer(
         "🏠 Главное меню",
@@ -115,14 +114,12 @@ async def on_theme(callback: CallbackQuery, state: FSMContext) -> None:
     theme_id = callback.data.split(":", 1)[1] if callback.data else ""
     theme = registry.get_theme(theme_id)
     if not theme:
-        await callback.answer("Тема устарела")
         await _render_l2(callback.message, 0, edit=True)
         return
     try:
         active = has_active(callback.from_user.id)
     except Exception:
         await _handle_db_error(callback.message, state)
-        await callback.answer()
         return
     if active:
         confirm_text = (
@@ -136,28 +133,24 @@ async def on_theme(callback: CallbackQuery, state: FSMContext) -> None:
         return
 
     await _start_theme_session(callback.message, state, callback.from_user.id, theme)
-    await callback.answer()
 
 
 @router.callback_query(lambda query: query.data and query.data.startswith("new:yes:"))
 async def on_new_story_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer("Ок")
     if not callback.message:
-        await callback.answer()
         return
     if not callback.from_user:
-        await callback.answer()
         return
     theme_id = callback.data.split(":", 2)[2] if callback.data else ""
     theme = registry.get_theme(theme_id)
     if not theme:
-        await callback.answer("Тема устарела")
         await _render_l2(callback.message, 0, edit=True)
         return
     try:
         session = get_session(callback.from_user.id)
     except Exception:
         await _handle_db_error(callback.message, state)
-        await callback.answer()
         return
     if session and session.last_step_message_id:
         try:
@@ -169,7 +162,6 @@ async def on_new_story_confirm(callback: CallbackQuery, state: FSMContext) -> No
         except Exception:
             pass
     await _start_theme_session(callback.message, state, callback.from_user.id, theme)
-    await callback.answer()
 
 
 async def _start_theme_session(

@@ -195,7 +195,41 @@ class OpenRouterProvider:
         format_mode = os.getenv("OPENROUTER_RESPONSE_FORMAT", "json_object").strip().lower()
         if format_mode != "json_schema":
             return {"type": "json_object"}
-        if expected_type == "story_step":
+        if expected_type == "book_rewrite_v1":
+            schema = {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["title", "cover", "pages"],
+                "properties": {
+                    "title": {"type": "string"},
+                    "cover": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["subtitle", "image_prompt"],
+                        "properties": {
+                            "subtitle": {"type": "string"},
+                            "image_prompt": {"type": "string"},
+                        },
+                    },
+                    "pages": {
+                        "type": "array",
+                        "minItems": 8,
+                        "maxItems": 8,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["page", "text", "image_prompt"],
+                            "properties": {
+                                "page": {"type": "integer"},
+                                "text": {"type": "string"},
+                                "image_prompt": {"type": "string"},
+                            },
+                        },
+                    },
+                },
+            }
+            name = "book_rewrite_v1"
+        elif expected_type == "story_step":
             schema = {
                 "type": "object",
                 "properties": {

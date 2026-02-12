@@ -32,6 +32,11 @@ def validate_response(
         if not ok:
             return None, reason, _build_validation_detail(expected_type, parsed, raw_text)
         return parsed, None, None
+    if expected_type == "book_rewrite_v1":
+        ok, reason = _validate_book_rewrite_v1(parsed)
+        if not ok:
+            return None, reason, _build_validation_detail(expected_type, parsed, raw_text)
+        return parsed, None, None
     return None, "type_mismatch", _build_validation_detail(expected_type, parsed, raw_text)
 
 
@@ -181,3 +186,25 @@ def _looks_truncated(raw_text: str) -> bool:
 def _looks_like_json(raw_text: str) -> bool:
     stripped = raw_text.lstrip()
     return stripped.startswith("{") or stripped.startswith("[")
+
+
+def _validate_book_rewrite_v1(parsed: Dict[str, Any]) -> Tuple[bool, str]:
+    title = parsed.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return False, "missing_required_fields"
+    cover = parsed.get("cover")
+    if not isinstance(cover, dict):
+        return False, "schema_invalid"
+    if not isinstance(cover.get("image_prompt"), str) or not cover.get("image_prompt", "").strip():
+        return False, "schema_invalid"
+    pages = parsed.get("pages")
+    if not isinstance(pages, list) or len(pages) != 8:
+        return False, "schema_invalid"
+    for page in pages:
+        if not isinstance(page, dict):
+            return False, "schema_invalid"
+        if not isinstance(page.get("text"), str) or not page.get("text", "").strip():
+            return False, "schema_invalid"
+        if not isinstance(page.get("image_prompt"), str) or not page.get("image_prompt", "").strip():
+            return False, "schema_invalid"
+    return True, ""

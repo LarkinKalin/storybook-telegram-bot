@@ -108,12 +108,8 @@ def _clamp_prompt(prompt: str) -> str:
 
 
 def _maybe_simulate_failure() -> None:
-    global _SIM_FAIL_USED
-    if _SIM_FAIL_USED:
-        return
     if os.getenv("SKAZKA_IMAGE_PROVIDER_SIM_FAIL", "0").strip() not in {"1", "true", "yes", "on"}:
         return
-    _SIM_FAIL_USED = True
     raise RuntimeError("simulated image provider failure")
 
 

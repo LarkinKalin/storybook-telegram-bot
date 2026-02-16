@@ -162,8 +162,6 @@ def _load_session_steps(session_id: int) -> list[dict[str, Any]]:
     for row in rows:
         sr = row.get("step_result_json") if isinstance(row.get("step_result_json"), dict) else {}
         narration = _step_narration(sr)
-        if isinstance(narration, str) and narration.strip().startswith("[DEV"):
-            continue
         items.append(
             {
                 "step_index": int(sr.get("step_index") or int(row["step"]) + 1),
@@ -378,6 +376,16 @@ async def run_book_job(message, session_row: dict[str, Any], theme_title: str | 
         logger.info("book.job status=running session_id=%s", session_row["id"])
         try:
             book_input = build_book_input(session_row, theme_title=theme_title)
+            total_steps = int(session_row.get("max_steps") or 8)
+            existing_steps = {
+                int(step.get("step_index"))
+                for step in book_input.get("steps", [])
+                if isinstance(step, dict) and isinstance(step.get("step_index"), int)
+            }
+            missing = [i for i in range(1, total_steps + 1) if i not in existing_steps]
+            if missing:
+                raise ValueError(f"session incomplete: missing steps {missing}")
+
             if _rewrite_enabled():
                 script = _run_rewrite_kimi(book_input)
             else:
@@ -396,11 +404,11 @@ async def run_book_job(message, session_row: dict[str, Any], theme_title: str | 
                 script_json_asset_id=script_asset_id,
                 error_message=None,
             )
-            logger.info("book.job status=done session_id=%s", session_row["id"])
+            logger.info("book.job done session_id=%s pdf_asset_id=%s", session_row["id"], pdf_asset_id)
             await _send_existing_pdf(message, pdf_asset_id)
             logger.info("book.send ok session_id=%s", session_row["id"])
         except Exception as exc:
-            logger.exception("book.job failed session_id=%s", session_row["id"])
+            logger.exception("book.job error session_id=%s", session_row["id"])
             book_jobs.upsert_status(session_row["id"], status="error", error_message=str(exc)[:500])
             await message.answer("Не удалось собрать книгу. Нажми «📖 Купить книгу», чтобы повторить.")
 

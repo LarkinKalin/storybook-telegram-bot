@@ -161,10 +161,13 @@ def _load_session_steps(session_id: int) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for row in rows:
         sr = row.get("step_result_json") if isinstance(row.get("step_result_json"), dict) else {}
+        narration = _step_narration(sr)
+        if isinstance(narration, str) and narration.strip().startswith("[DEV"):
+            continue
         items.append(
             {
                 "step_index": int(sr.get("step_index") or int(row["step"]) + 1),
-                "narration_text": _step_narration(sr),
+                "narration_text": narration,
                 "choices": _step_choices_for_protocol(sr),
                 "chosen_choice_id": sr.get("chosen_choice_id") or row.get("choice_id"),
                 "story_step_json": sr.get("story_step_json") if isinstance(sr.get("story_step_json"), dict) else sr,
@@ -290,7 +293,11 @@ def _run_rewrite_kimi(book_input: dict[str, Any]) -> dict[str, Any]:
     parsed = result.parsed_json if isinstance(result.parsed_json, dict) else None
     if not parsed:
         parsed = _build_book_script_fallback(book_input)
-    parsed = _validate_book_script(parsed)
+    try:
+        parsed = _validate_book_script(parsed)
+    except Exception:
+        logger.exception("book.rewrite invalid_response fallback_to_direct")
+        parsed = _validate_book_script(_build_book_script_fallback(book_input))
     logger.info("book.rewrite ok pages=%s", len(parsed.get("pages", [])))
     return parsed
 

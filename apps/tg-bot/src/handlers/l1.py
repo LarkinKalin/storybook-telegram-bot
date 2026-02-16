@@ -45,7 +45,6 @@ from src.states import L3, L4, L5, UX
 from src.services.book_runtime import (
     book_offer_text,
     run_book_job,
-    run_dev_book_test_from_db,
     run_dev_layout_test,
     run_dev_rewrite_test,
     send_sample_pdf,
@@ -234,6 +233,52 @@ async def _send_settings_screen(message: Message) -> None:
         message,
         "⚙ Настройки\n\nМожно сохранить имя ребёнка для сказок и будущей книжки.",
         lambda: build_settings_keyboard(add_dev_tools=add_dev),
+    )
+
+
+
+def _book_offer_enabled() -> bool:
+    raw = os.getenv("SKAZKA_BOOK_OFFER", "1").strip().lower()
+    if raw == "":
+        raw = "1"
+    return raw in {"1", "true", "yes", "on"}
+
+
+async def _send_book_offer(message: Message) -> None:
+    await message.answer(book_offer_text(), reply_markup=build_book_offer_keyboard())
+
+
+def _normalize_child_name(raw: str) -> str | None:
+    value = raw.strip()
+    if not value:
+        return None
+    if len(value) > 32:
+        value = value[:32]
+    return value
+
+
+
+async def _maybe_send_book_offer(message: Message, result) -> None:
+    if not _book_offer_enabled():
+        logger.info("book.offer skip reason=disabled chat_id=%s", message.chat.id)
+        return
+    if not result:
+        logger.info("book.offer skip reason=no_result chat_id=%s", message.chat.id)
+        return
+    if not getattr(result, "step_view", None):
+        logger.info("book.offer skip reason=no_step_view chat_id=%s", message.chat.id)
+        return
+    final_id = getattr(result, "final_id", None) or getattr(result.step_view, "final_id", None)
+    if not final_id:
+        logger.info("book.offer skip reason=no_final chat_id=%s", message.chat.id)
+        return
+    await _send_book_offer(message)
+    logger.info(
+        "book.offer shown session_id=%s sid8=%s final_id=%s enabled=true chat_id=%s",
+        getattr(result, "session_id", None),
+        getattr(result, "sid8", None),
+        final_id,
+        message.chat.id,
     )
 
 
@@ -818,6 +863,7 @@ async def on_dev_book_offer(message: Message) -> None:
     logger.info("book.offer shown chat_id=%s source=dev_book_offer", message.chat.id)
 
 
+@router.message(Command("dev_book"), StateFilter("*"))
 @router.message(Command("dev_book_gen"), StateFilter("*"))
 async def on_dev_book_gen(message: Message, state: FSMContext) -> None:
     if not message.from_user:
@@ -1024,7 +1070,21 @@ async def on_dev_book_test(callback: CallbackQuery) -> None:
 
     async def _run() -> None:
         try:
-            await run_dev_book_test_from_db(callback.message, callback.from_user.id)
+            session = get_session(callback.from_user.id)
+            if not session:
+                await callback.message.answer("Нет активной сессии. Сначала подключи /dev_use_session <sid8>.")
+                return
+            # If active session is not finalized yet — fast-finish first.
+            if not session.ending_id:
+                ok, msg = fast_forward_to_final(callback.from_user.id)
+                await callback.message.answer(msg)
+                if not ok:
+                    return
+            refreshed = get_session(callback.from_user.id)
+            if not refreshed:
+                await callback.message.answer("Не удалось получить активную сессию после dev_finish.")
+                return
+            await run_book_job(callback.message, refreshed.__dict__, theme_title=refreshed.theme_id)
         except Exception as exc:
             logger.exception("dev.book_test error", exc_info=exc)
             await callback.message.answer("Не вышло собрать тестовую книгу. Попробуй ещё раз.")

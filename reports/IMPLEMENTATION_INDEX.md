@@ -68,3 +68,4 @@ YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINA
 2026-02-12 | TG.8.2.XX.FINAL_OFFER_ALWAYS | DONE | Final detection now always sets final_id/finish_status on terminal step; book-offer skip reasons logged and offer send logged with final_id
 2026-02-12 | TG.8.2.XX.OFFER_AFTER_FINAL | DONE | Dev test-book now auto-finishes active session then runs real book job; offer logs use shown/skip reasons; DB step loader ignores [DEV] and rewrite has safe fallback
 2026-02-12 | TG.8.2.XX.REAL_BOOK_FINAL | DONE | Final offer decision now logs robust finish criteria; dev test-book auto-finalizes active session and runs real book job; merge-marker guard test added
+2026-02-12 | TG.8.2.XX.FINAL_PIPELINE_STABLE | DONE | L3 turn result now carries max_steps in all outcomes; end-of-story offer decisions consistently use step/max_steps context

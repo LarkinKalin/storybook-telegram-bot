@@ -225,6 +225,7 @@ def apply_l3_turn(
             step=int(result.session_row["step"]),
             theme_id=result.session_row.get("theme_id"),
             final_id=None,
+            max_steps=int(result.session_row.get("max_steps", 0)) if result and result.session_row else None,
         )
     if result.outcome == "duplicate":
         step_result_json = None
@@ -263,4 +264,5 @@ def apply_l3_turn(
         step=int(payload.new_state["step0"]),
         theme_id=result.session_row.get("theme_id"),
         final_id=payload.final_id or step_view.final_id,
+        max_steps=int(result.session_row.get("max_steps", 0)) if result and result.session_row else None,
     )

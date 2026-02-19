@@ -706,6 +706,95 @@ def _normalize_child_name(raw: str) -> str | None:
 
 
 async def _maybe_send_book_offer(message: Message, result) -> None:
+    session_id = getattr(result, "session_id", None) if result else None
+    step = getattr(result, "step", None) if result else None
+    max_steps = getattr(result, "max_steps", None) if result else None
+    ending_id_present = bool(getattr(result, "final_id", None)) if result else False
+
+    if not _book_offer_enabled():
+        logger.info(
+            "book.offer decision reason=disabled session_id=%s step=%s max_steps=%s ending_id_present=%s chat_id=%s",
+            session_id,
+            step,
+            max_steps,
+            ending_id_present,
+            message.chat.id,
+        )
+        return
+    if not result:
+        logger.info(
+            "book.offer decision reason=no_result session_id=%s step=%s max_steps=%s ending_id_present=%s chat_id=%s",
+            session_id,
+            step,
+            max_steps,
+            ending_id_present,
+            message.chat.id,
+        )
+        return
+    if not getattr(result, "step_view", None):
+        logger.info(
+            "book.offer decision reason=no_step_view session_id=%s step=%s max_steps=%s ending_id_present=%s chat_id=%s",
+            session_id,
+            step,
+            max_steps,
+            ending_id_present,
+            message.chat.id,
+        )
+        return
+
+    final_id = getattr(result, "final_id", None) or getattr(result.step_view, "final_id", None)
+    ending_id_present = bool(final_id)
+    step0 = getattr(result, "step", None)
+    total_steps = getattr(result, "max_steps", None)
+    finished_by_step = isinstance(step0, int) and isinstance(total_steps, int) and step0 >= total_steps - 1
+    is_finished = ending_id_present or finished_by_step
+    if not is_finished:
+        logger.info(
+            "book.offer decision reason=not_finished session_id=%s step=%s max_steps=%s ending_id_present=%s chat_id=%s",
+            session_id,
+            step0,
+            total_steps,
+            ending_id_present,
+            message.chat.id,
+        )
+        return
+
+    await _send_book_offer(message)
+    logger.info(
+        "book.offer shown session_id=%s sid8=%s final_id=%s step=%s max_steps=%s ending_id_present=%s chat_id=%s",
+        session_id,
+        getattr(result, "sid8", None),
+        final_id,
+        step0,
+        total_steps,
+        ending_id_present,
+        message.chat.id,
+    )
+
+
+
+def _book_offer_enabled() -> bool:
+    raw = os.getenv("SKAZKA_BOOK_OFFER", "1").strip().lower()
+    if raw == "":
+        raw = "1"
+    return raw in {"1", "true", "yes", "on"}
+
+
+async def _send_book_offer(message: Message) -> None:
+    await message.answer(book_offer_text(), reply_markup=build_book_offer_keyboard())
+
+
+def _normalize_child_name(raw: str) -> str | None:
+    value = raw.strip()
+    if not value:
+        return None
+    if len(value) > 32:
+        value = value[:32]
+    return value
+
+
+
+async def _maybe_send_book_offer(message: Message, result) -> None:
     if not _book_offer_enabled():
         logger.info("book.offer skip reason=disabled chat_id=%s", message.chat.id)
         return

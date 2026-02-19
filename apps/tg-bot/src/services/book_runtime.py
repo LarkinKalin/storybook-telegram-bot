@@ -162,9 +162,10 @@ def _load_session_steps(session_id: int) -> list[dict[str, Any]]:
     for row in rows:
         sr = row.get("step_result_json") if isinstance(row.get("step_result_json"), dict) else {}
         narration = _step_narration(sr)
+        step_index = int(row["step"]) + 1
         items.append(
             {
-                "step_index": int(sr.get("step_index") or int(row["step"]) + 1),
+                "step_index": step_index,
                 "narration_text": narration,
                 "choices": _step_choices_for_protocol(sr),
                 "chosen_choice_id": sr.get("chosen_choice_id") or row.get("choice_id"),
@@ -382,7 +383,8 @@ async def run_book_job(message, session_row: dict[str, Any], theme_title: str | 
                 for step in book_input.get("steps", [])
                 if isinstance(step, dict) and isinstance(step.get("step_index"), int)
             }
-            missing = [i for i in range(1, total_steps + 1) if i not in existing_steps]
+            required_steps = _required_story_step_indexes(total_steps)
+            missing = [i for i in required_steps if i not in existing_steps]
             if missing:
                 raise ValueError(f"session incomplete: missing steps {missing}")
 
@@ -427,6 +429,14 @@ async def _generate_book_images(book_script: dict[str, Any], style_ref_asset_id:
         asset_id, _ = _store_binary_asset("image", placeholder, "image/png", digest)
         out.append(asset_id)
     return out
+
+
+def _required_story_step_indexes(total_steps: int) -> list[int]:
+    total = max(1, int(total_steps or 1))
+    if total <= 1:
+        return [1]
+    # story events store narrative turns; terminal final is tracked separately.
+    return list(range(1, total))
 
 
 def _build_placeholder_png(label: str) -> bytes:

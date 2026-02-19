@@ -63,3 +63,4 @@ YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINA
 2026-02-12 | TG.8.2.XX.REAL_BOOK_FINAL | DONE | Final offer decision now logs robust finish criteria; dev test-book auto-finalizes active session and runs real book job; merge-marker guard test added
 2026-02-12 | TG.8.2.XX.FINAL_PIPELINE_STABLE | DONE | L3 turn result now carries max_steps in all outcomes; end-of-story offer decisions consistently use step/max_steps context
 2026-02-12 | TG.8.2.XX.HOTFIX_BOOT_GUARD | DONE | Normalized IMPLEMENTATION_INDEX header duplication and added Dockerfile merge-marker guard step to fail image build on conflict artifacts
+2026-02-13 | TG.8.1.02.B | DONE | Book PDF quality v1: DejaVu Cyrillic fonts + image-backed page render with bottom text panel; image generation now uses provider with style-ref fallback; added pypdf dependency

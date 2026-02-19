@@ -63,3 +63,24 @@
 2026-01-20 | TG.2.3.02A | DONE | L2 active-story confirm: add ⬅ Назад to return to theme list without changing session
 2026-01-22 | TG.3.5.01 | DONE | TG bot uses Postgres for runtime sessions (1 ACTIVE enforced); resume/status/confirm read/write DB; survives restart
 2026-01-23 | TG.4.2.01 | DONE | L3 inline runtime: engine apply_turn + params_json persistence + session_events step logs + final save (no LLM), anti-stale + fingerprint dedupe
+
+## 2026-02-13 — TG.8.1.02.B — Book PDF Quality v1 (DONE)
+
+Где рендерится PDF:
+- `apps/tg-bot/src/services/book_runtime.py`
+- функция `_build_book_pdf_bytes(...)` (рендер)
+- функция `_build_book_pdf(...)` (сохранение asset kind=pdf)
+
+Pipeline книги:
+1. DB: `build_book_input()` читает `session_events` (+ style ref из `session_images`).
+2. Rewrite: `_run_rewrite_kimi(...)` или fallback `_build_book_script_fallback(...)`.
+3. Images: `_generate_book_images(...)` (Flux/OpenRouter; fallback на `style_ref_asset_id` как временное поведение).
+4. PDF: `_build_book_pdf_bytes(...)` (фон-картинка + текстовая плашка), `_build_book_pdf(...)`.
+5. Assets + send: `book_jobs.upsert_status(...done)` + `_send_existing_pdf(...)`.
+
+Env-флаги:
+- `SKAZKA_BOOK_REWRITE` (default `0`) — включить rewrite через LLM.
+- `SKAZKA_BOOK_REWRITE_PROMPT_KEY` (default `v1_default`) — ключ prompt-файла.
+- `SKAZKA_BOOK_REWRITE_PROMPT` (default empty) — прямой override prompt текстом.
+- `SKAZKA_BOOK_REWRITE_MODEL` (default `openrouter/kimi-k2`) — модель rewrite.
+- `SKAZKA_BOOK_IMAGES` (default `1`) — включить генерацию изображений.

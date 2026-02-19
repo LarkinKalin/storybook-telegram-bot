@@ -14,6 +14,7 @@ from aiogram.types import BufferedInputFile
 from db.conn import transaction
 from db.repos import assets, book_jobs, session_images, sessions, users
 from packages.llm.src import generate as llm_generate
+from packages.llm.src.openrouter_image_provider import generate_i2i, generate_t2i
 from src.services.image_delivery import _resolve_storage_path
 
 try:
@@ -426,14 +427,51 @@ async def _generate_book_images(book_script: dict[str, Any], style_ref_asset_id:
     if not _images_enabled():
         logger.info("book.images ok count=0 reason=disabled")
         return [None for _ in pages]
-    # production hook placeholder: use fallback image assets to keep pipeline stable.
+
+    reference_payload: tuple[bytes, str] | None = _load_reference_payload(style_ref_asset_id)
+
     out: list[int | None] = []
-    for idx, _page in enumerate(pages, start=1):
-        placeholder = _build_placeholder_png(f"p{idx}")
-        digest = hashlib.sha256(placeholder).hexdigest()
-        asset_id, _ = _store_binary_asset("image", placeholder, "image/png", digest)
-        out.append(asset_id)
+    for idx, page in enumerate(pages, start=1):
+        prompt = str(page.get("image_prompt") or "").strip() or f"storybook illustration page {idx}"
+        try:
+            if reference_payload is not None:
+                image_bytes, mime, width, height, sha256 = generate_i2i(
+                    prompt,
+                    reference_bytes=reference_payload[0],
+                    reference_mime=reference_payload[1],
+                )
+            else:
+                image_bytes, mime, width, height, sha256 = generate_t2i(prompt)
+            asset_id, _ = _store_binary_asset(
+                "image",
+                image_bytes,
+                mime,
+                sha256,
+                width=width,
+                height=height,
+            )
+            out.append(asset_id)
+            logger.info("book.image ok page=%s asset_id=%s", idx, asset_id)
+        except Exception:
+            if style_ref_asset_id is not None:
+                out.append(style_ref_asset_id)
+                logger.warning("book.image fallback page=%s source=style_ref asset_id=%s", idx, style_ref_asset_id)
+            else:
+                out.append(None)
+                logger.exception("book.image error page=%s", idx)
     return out
+
+
+def _load_reference_payload(asset_id: int | None) -> tuple[bytes, str] | None:
+    if asset_id is None:
+        return None
+    row = assets.get_by_id(asset_id)
+    if not row or not row.get("storage_key"):
+        return None
+    path = _resolve_storage_path(str(row["storage_key"]))
+    if not path.exists():
+        return None
+    return path.read_bytes(), str(row.get("mime") or "image/png")
 
 
 def _required_story_step_indexes(total_steps: int) -> list[int]:
@@ -473,16 +511,15 @@ def _build_book_pdf_bytes(
     page_w, page_h = A5
     c = canvas.Canvas(buf, pagesize=A5)
 
-    # Unicode-шрифт для кириллицы
     try:
         pdfmetrics.registerFont(TTFont("DejaVuSans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"))
         pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"))
-        font_reg_ok = True
     except Exception:
-        font_reg_ok = False
+        logger.exception("book.pdf font registration failed")
+        return _simple_pdf("Не удалось зарегистрировать шрифт DejaVu для PDF.")
 
-    FONT = "DejaVuSans" if font_reg_ok else "Helvetica"
-    FONT_B = "DejaVuSans-Bold" if font_reg_ok else "Helvetica-Bold"
+    FONT = "DejaVuSans"
+    FONT_B = "DejaVuSans-Bold"
 
     c.setTitle(str(title))
     c.setFont(FONT_B, 16)
@@ -498,14 +535,10 @@ def _build_book_pdf_bytes(
         page_no = page.get("page_no") or idx
         heading = str(page.get("heading") or f"Страница {page_no}")
         text = str(page.get("text") or "")
-        c.setFont(FONT_B, 13)
-        c.drawString(24, page_h - 40, heading)
-        # Картинка страницы (если есть)
-        img_box_w = page_w - 48
-        img_box_h = 220
-        img_x = 24
-        img_top = page_h - 62
-        img_y = img_top - img_box_h
+        img_x = 0
+        img_y = 0
+        img_box_w = page_w
+        img_box_h = page_h
 
         asset_id = None
         if image_assets and (idx - 1) < len(image_assets):
@@ -516,25 +549,43 @@ def _build_book_pdf_bytes(
                 a = assets.get_by_id(int(asset_id))
                 if a and a.get("storage_key"):
                     p = _resolve_storage_path(a["storage_key"])
+                    img = ImageReader(str(p))
+                    src_w, src_h = img.getSize()
+                    if src_w and src_h:
+                        scale = max(page_w / float(src_w), page_h / float(src_h))
+                        draw_w = float(src_w) * scale
+                        draw_h = float(src_h) * scale
+                        draw_x = (page_w - draw_w) / 2.0
+                        draw_y = (page_h - draw_h) / 2.0
+                    else:
+                        draw_w, draw_h, draw_x, draw_y = img_box_w, img_box_h, img_x, img_y
                     c.drawImage(
-                        ImageReader(str(p)),
-                        img_x,
-                        img_y,
-                        width=img_box_w,
-                        height=img_box_h,
-                        preserveAspectRatio=True,
+                        img,
+                        draw_x,
+                        draw_y,
+                        width=draw_w,
+                        height=draw_h,
+                        preserveAspectRatio=False,
                         mask="auto",
                     )
             except Exception:
                 logger.exception("book.pdf image draw failed page=%s asset_id=%s", idx, asset_id)
 
+        panel_h = 140
+        c.setFillColorRGB(1, 1, 1)
+        c.rect(20, 20, page_w - 40, panel_h, fill=1, stroke=0)
+
+        c.setFillColorRGB(0, 0, 0)
+        c.setFont(FONT_B, 13)
+        c.drawString(28, 20 + panel_h - 24, heading)
+
         c.setFont(FONT, 10)
-        wrapped = simpleSplit(text, FONT, 10, page_w - 48)
-        y = img_y - 16
+        wrapped = simpleSplit(text, FONT, 10, page_w - 56)
+        y = 20 + panel_h - 44
         for line in wrapped:
-            c.drawString(24, y, line)
+            c.drawString(28, y, line)
             y -= 13
-            if y < 34:
+            if y < 30:
                 break
         c.setFont(FONT, 9)
         c.drawRightString(page_w - 24, 20, str(idx + 1))

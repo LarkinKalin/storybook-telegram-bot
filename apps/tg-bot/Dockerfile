@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY apps/tg-bot/src/ /app/src/
 COPY apps/tg-bot/tests/ /app/apps/tg-bot/tests/
 COPY apps/tg-bot/scripts/ /app/apps/tg-bot/scripts/
+COPY apps/tg-bot/assets/ /app/apps/tg-bot/assets/
 COPY packages/db/src/ /app/packages/db/src/
 COPY packages/db/migrations/ /app/packages/db/migrations/
 COPY packages/db/tests/ /app/packages/db/tests/

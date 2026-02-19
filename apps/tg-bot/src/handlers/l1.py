@@ -10,6 +10,7 @@ from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from aiogram.exceptions import TelegramBadRequest
+from psycopg.rows import dict_row
 
 from src.handlers.l2 import open_l2
 from src.keyboards.l1 import L1Label, build_l1_keyboard
@@ -38,6 +39,7 @@ from src.services.ui_delivery import (
 )
 from src.services.image_delivery import resolve_story_step_ui, schedule_image_delivery
 from db.repos import ui_events, users
+from db.conn import transaction
 from src.services.content_stub import build_content_step
 from db.repos import session_events
 from src.services.theme_registry import registry
@@ -233,6 +235,95 @@ async def _send_settings_screen(message: Message) -> None:
         message,
         "⚙ Настройки\n\nМожно сохранить имя ребёнка для сказок и будущей книжки.",
         lambda: build_settings_keyboard(add_dev_tools=add_dev),
+    )
+
+
+
+def _book_offer_enabled() -> bool:
+    raw = os.getenv("SKAZKA_BOOK_OFFER", "1").strip().lower()
+    if raw == "":
+        raw = "1"
+    return raw in {"1", "true", "yes", "on"}
+
+
+async def _send_book_offer(message: Message) -> None:
+    await message.answer(book_offer_text(), reply_markup=build_book_offer_keyboard())
+
+
+def _normalize_child_name(raw: str) -> str | None:
+    value = raw.strip()
+    if not value:
+        return None
+    if len(value) > 32:
+        value = value[:32]
+    return value
+
+
+
+async def _maybe_send_book_offer(message: Message, result) -> None:
+    session_id = getattr(result, "session_id", None) if result else None
+    step = getattr(result, "step", None) if result else None
+    max_steps = getattr(result, "max_steps", None) if result else None
+    ending_id_present = bool(getattr(result, "final_id", None)) if result else False
+
+    if not _book_offer_enabled():
+        logger.info(
+            "book.offer decision reason=disabled session_id=%s step=%s max_steps=%s ending_id_present=%s chat_id=%s",
+            session_id,
+            step,
+            max_steps,
+            ending_id_present,
+            message.chat.id,
+        )
+        return
+    if not result:
+        logger.info(
+            "book.offer decision reason=no_result session_id=%s step=%s max_steps=%s ending_id_present=%s chat_id=%s",
+            session_id,
+            step,
+            max_steps,
+            ending_id_present,
+            message.chat.id,
+        )
+        return
+    if not getattr(result, "step_view", None):
+        logger.info(
+            "book.offer decision reason=no_step_view session_id=%s step=%s max_steps=%s ending_id_present=%s chat_id=%s",
+            session_id,
+            step,
+            max_steps,
+            ending_id_present,
+            message.chat.id,
+        )
+        return
+
+    final_id = getattr(result, "final_id", None) or getattr(result.step_view, "final_id", None)
+    ending_id_present = bool(final_id)
+    step0 = getattr(result, "step", None)
+    total_steps = getattr(result, "max_steps", None)
+    finished_by_step = isinstance(step0, int) and isinstance(total_steps, int) and step0 >= total_steps - 1
+    is_finished = ending_id_present or finished_by_step
+    if not is_finished:
+        logger.info(
+            "book.offer decision reason=not_finished session_id=%s step=%s max_steps=%s ending_id_present=%s chat_id=%s",
+            session_id,
+            step0,
+            total_steps,
+            ending_id_present,
+            message.chat.id,
+        )
+        return
+
+    await _send_book_offer(message)
+    logger.info(
+        "book.offer shown session_id=%s sid8=%s final_id=%s step=%s max_steps=%s ending_id_present=%s chat_id=%s",
+        session_id,
+        getattr(result, "sid8", None),
+        final_id,
+        step0,
+        total_steps,
+        ending_id_present,
+        message.chat.id,
     )
 
 
@@ -1388,10 +1479,71 @@ async def on_book_buy(callback: CallbackQuery, state: FSMContext) -> None:
         await _handle_db_error(callback.message, state, exc=exc)
         return
     if not session:
+        try:
+            session = _pick_book_source_session(callback.from_user.id)
+        except Exception as exc:
+            await _handle_db_error(callback.message, state, exc=exc)
+            return
+    if not session:
         await callback.message.answer("Нет активной или завершённой сессии для сборки книги.")
         return
     await callback.message.answer("Запускаю сборку книги. Это займёт немного времени ⏳")
-    await run_book_job(callback.message, session.__dict__, theme_title=session.theme_id)
+    session_row = session if isinstance(session, dict) else session.__dict__
+    await run_book_job(callback.message, session_row, theme_title=session_row.get("theme_id"))
+
+
+def _pick_book_source_session(tg_id: int):
+    """Fallback selection for book generation when active session is missing."""
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT s.*,
+                       COALESCE(COUNT(se.*) FILTER (WHERE se.step_result_json IS NOT NULL), 0) AS step_events,
+                       BOOL_OR(COALESCE(se.step_result_json->>'final_id','') <> '') AS has_final_id
+                FROM sessions s
+                LEFT JOIN session_events se ON se.session_id = s.id
+                WHERE s.tg_id = %s
+                  AND s.status IN ('ACTIVE', 'FINISHED', 'ABORTED')
+                GROUP BY s.id
+                ORDER BY s.id DESC;
+                """,
+                (tg_id,),
+            )
+            rows = [dict(row) for row in cur.fetchall()]
+
+    for row in rows:
+        status = row.get("status")
+        step = int(row.get("step") or 0)
+        max_steps = int(row.get("max_steps") or 0)
+        ending_id = row.get("ending_id")
+        has_final_id = bool(row.get("has_final_id"))
+        step_events = int(row.get("step_events") or 0)
+        enough_steps = step_events >= max(3, max_steps)
+        finished = bool(ending_id) or has_final_id or (max_steps > 0 and step >= max_steps - 1)
+        if enough_steps or finished:
+            logger.info(
+                "book.buy session_selected session_id=%s status=%s step=%s max_steps=%s ending_id_present=%s has_final_id=%s step_events=%s",
+                row.get("id"),
+                status,
+                step,
+                max_steps,
+                bool(ending_id),
+                has_final_id,
+                step_events,
+            )
+            return row
+        logger.info(
+            "book.buy session_rejected session_id=%s status=%s step=%s max_steps=%s ending_id_present=%s has_final_id=%s step_events=%s reason=insufficient_story_data",
+            row.get("id"),
+            status,
+            step,
+            max_steps,
+            bool(ending_id),
+            has_final_id,
+            step_events,
+        )
+    return None
 
 
 @router.message(L3.STEP)

@@ -15,6 +15,16 @@ COPY packages/engine/ /app/packages/engine/
 COPY packages/llm/ /app/packages/llm/
 COPY content/ /app/content/
 
+RUN python - <<'PY'
+from pathlib import Path
+root = Path('/app')
+for path in root.rglob('*.py'):
+    text = path.read_text(encoding='utf-8', errors='ignore')
+    if '<<<<<<< ' in text or '\n=======\n' in text or '>>>>>>> ' in text:
+        raise SystemExit(f'merge markers found in {path}')
+print('merge-marker guard: OK')
+PY
+
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app:/app/packages/db/src
 

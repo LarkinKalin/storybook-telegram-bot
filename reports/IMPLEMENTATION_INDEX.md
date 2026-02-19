@@ -10,13 +10,6 @@
 
 ## Последние события
 - 2026-01-17: TG.1.1.01..TG.1.1.04 — подготовка окружения и репо (см. OPS_DB_TON.md)
-# IMPLEMENTATION_INDEX
-Факт-лог по квестам. Ссылки на журналы зон.
-
-- TG_BOT.md
-- ENGINE.md
-- LLM_FILTERS.md
-- OPS_DB_TON.md
 TG.2.2.01+TG.2.3.01 — runnable tg-bot in docker compose (/start OK) — 2026-01-19 — 7cdcc83,b03044e,b0f1ca1
 
 2026-01-19 | TG.1.1.01 | ACCEPTED | Created system dirs /etc/skazka (750), /var/lib/skazka, /var/log/skazka, /var/backups/skazka (755)
@@ -69,3 +62,4 @@ YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINA
 2026-02-12 | TG.8.2.XX.OFFER_AFTER_FINAL | DONE | Dev test-book now auto-finishes active session then runs real book job; offer logs use shown/skip reasons; DB step loader ignores [DEV] and rewrite has safe fallback
 2026-02-12 | TG.8.2.XX.REAL_BOOK_FINAL | DONE | Final offer decision now logs robust finish criteria; dev test-book auto-finalizes active session and runs real book job; merge-marker guard test added
 2026-02-12 | TG.8.2.XX.FINAL_PIPELINE_STABLE | DONE | L3 turn result now carries max_steps in all outcomes; end-of-story offer decisions consistently use step/max_steps context
+2026-02-12 | TG.8.2.XX.HOTFIX_BOOT_GUARD | DONE | Normalized IMPLEMENTATION_INDEX header duplication and added Dockerfile merge-marker guard step to fail image build on conflict artifacts

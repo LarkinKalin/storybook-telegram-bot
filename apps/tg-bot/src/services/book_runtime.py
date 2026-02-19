@@ -18,12 +18,17 @@ from src.services.image_delivery import _resolve_storage_path
 
 try:
     from reportlab.lib.pagesizes import A5
-    from reportlab.lib.utils import simpleSplit
+    from reportlab.lib.utils import ImageReader, simpleSplit
     from reportlab.pdfgen import canvas
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
 except Exception:  # pragma: no cover - optional runtime dependency
     A5 = None
+    ImageReader = None
     simpleSplit = None
     canvas = None
+    pdfmetrics = None
+    TTFont = None
 
 logger = logging.getLogger(__name__)
 
@@ -444,7 +449,12 @@ def _build_placeholder_png(label: str) -> bytes:
     return bytes.fromhex("89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C4890000000A49444154789C6360000002000154A24F5D0000000049454E44AE426082")
 
 
-def _build_book_pdf_bytes(book_script: dict[str, Any], *, child_name: str | None = None) -> bytes:
+def _build_book_pdf_bytes(
+    book_script: dict[str, Any],
+    *,
+    child_name: str | None = None,
+    image_assets: list[int | None] | None = None,
+) -> bytes:
     title = book_script.get("title") or "Сказка"
     pages = book_script.get("pages") if isinstance(book_script.get("pages"), list) else []
 
@@ -463,13 +473,24 @@ def _build_book_pdf_bytes(book_script: dict[str, Any], *, child_name: str | None
     page_w, page_h = A5
     c = canvas.Canvas(buf, pagesize=A5)
 
+    # Unicode-шрифт для кириллицы
+    try:
+        pdfmetrics.registerFont(TTFont("DejaVuSans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"))
+        pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"))
+        font_reg_ok = True
+    except Exception:
+        font_reg_ok = False
+
+    FONT = "DejaVuSans" if font_reg_ok else "Helvetica"
+    FONT_B = "DejaVuSans-Bold" if font_reg_ok else "Helvetica-Bold"
+
     c.setTitle(str(title))
-    c.setFont("Helvetica-Bold", 16)
+    c.setFont(FONT_B, 16)
     c.drawString(36, page_h - 56, str(title))
-    c.setFont("Helvetica", 11)
+    c.setFont(FONT, 11)
     c.drawString(36, page_h - 78, f"Имя героя: {child_name or 'дружок'}")
     c.drawString(36, page_h - 94, f"Дата: {datetime.utcnow().date().isoformat()}")
-    c.setFont("Helvetica", 9)
+    c.setFont(FONT, 9)
     c.drawRightString(page_w - 24, 20, "1")
     c.showPage()
 
@@ -477,17 +498,45 @@ def _build_book_pdf_bytes(book_script: dict[str, Any], *, child_name: str | None
         page_no = page.get("page_no") or idx
         heading = str(page.get("heading") or f"Страница {page_no}")
         text = str(page.get("text") or "")
-        c.setFont("Helvetica-Bold", 13)
+        c.setFont(FONT_B, 13)
         c.drawString(24, page_h - 40, heading)
-        c.setFont("Helvetica", 10)
-        wrapped = simpleSplit(text, "Helvetica", 10, page_w - 48)
-        y = page_h - 62
+        # Картинка страницы (если есть)
+        img_box_w = page_w - 48
+        img_box_h = 220
+        img_x = 24
+        img_top = page_h - 62
+        img_y = img_top - img_box_h
+
+        asset_id = None
+        if image_assets and (idx - 1) < len(image_assets):
+            asset_id = image_assets[idx - 1]
+
+        if asset_id and ImageReader is not None:
+            try:
+                a = assets.get_by_id(int(asset_id))
+                if a and a.get("storage_key"):
+                    p = _resolve_storage_path(a["storage_key"])
+                    c.drawImage(
+                        ImageReader(str(p)),
+                        img_x,
+                        img_y,
+                        width=img_box_w,
+                        height=img_box_h,
+                        preserveAspectRatio=True,
+                        mask="auto",
+                    )
+            except Exception:
+                logger.exception("book.pdf image draw failed page=%s asset_id=%s", idx, asset_id)
+
+        c.setFont(FONT, 10)
+        wrapped = simpleSplit(text, FONT, 10, page_w - 48)
+        y = img_y - 16
         for line in wrapped:
             c.drawString(24, y, line)
             y -= 13
             if y < 34:
                 break
-        c.setFont("Helvetica", 9)
+        c.setFont(FONT, 9)
         c.drawRightString(page_w - 24, 20, str(idx + 1))
         c.showPage()
 
@@ -502,7 +551,7 @@ def _build_book_pdf(
     image_assets: list[int | None] | None = None,
     child_name: str | None = None,
 ) -> int:
-    pdf_bytes = _build_book_pdf_bytes(book_script, child_name=child_name)
+    pdf_bytes = _build_book_pdf_bytes(book_script, child_name=child_name, image_assets=image_assets)
     digest = hashlib.sha256(pdf_bytes).hexdigest()
     asset_id, _ = _store_binary_asset("pdf", pdf_bytes, "application/pdf", digest)
     return asset_id

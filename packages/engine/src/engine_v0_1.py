@@ -252,6 +252,9 @@ def apply_turn(
     choice_id = turn.get("choice_id") if turn_kind == "choice" else None
     text = turn.get("text") if turn_kind == "free_text" else None
     classifier_result = turn.get("classifier_result") if turn_kind == "free_text" else None
+    confidence = 0.0
+    safety = "unclear"
+    intent_trait = None
 
     noise_input = False
     if turn_kind == "free_text":
@@ -264,6 +267,7 @@ def apply_turn(
             else:
                 confidence = float(classifier_result.get("confidence", 0.0))
                 safety = classifier_result.get("safety", "unclear")
+                intent_trait = classifier_result.get("intent_trait")
                 if confidence < 0.65:
                     neutral_reason = "low_confidence"
                 elif safety == "unclear":
@@ -331,6 +335,12 @@ def apply_turn(
                 choice = find_choice(content_step, choice_id)
                 if choice is not None:
                     milestone_vote_current = copy.deepcopy(choice["milestone_vote"])
+                    new_state["milestone_votes"][milestone_id] = milestone_vote_current
+                else:
+                    milestone_vote_current = {"vote": "none", "reason": "none"}
+            elif turn_kind == "free_text":
+                if confidence >= 0.70 and intent_trait in {"t1", "t2", "t3", "t4", "t5"}:
+                    milestone_vote_current = {"vote": intent_trait, "reason": "intent"}
                     new_state["milestone_votes"][milestone_id] = milestone_vote_current
                 else:
                     milestone_vote_current = {"vote": "none", "reason": "none"}

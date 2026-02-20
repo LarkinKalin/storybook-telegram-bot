@@ -15,10 +15,23 @@
 Верни JSON точно такого вида:
 {
   "text": "...",
-  "image_prompt": "..."
+  "image_prompt": "...",
+  "classifier_result": null
 }
 
 Правила:
 - Поле text обязательно.
 - Поле image_prompt опционально: можно не указывать, либо задать короткую строку для иллюстрации.
 - Поле choices не добавляй (или если есть, то это пустой массив []).
+
+
+== CLASSIFIER_RESULT (ОБЯЗАТЕЛЬНО) ==
+Если вход игрока в story_request.turn.kind == "free_text", обязательно заполни поле classifier_result объектом:
+{
+  "intent_trait": "t1|t2|t3|t4|t5|t6|neutral",
+  "confidence": 0..1,
+  "safety": "ok|unclear",
+  "deltas": [{"trait":"t1..t6","delta": целое}],
+  "tags": ["..."]
+}
+Если вход игрока в story_request.turn.kind == "choice", верни "classifier_result": null.

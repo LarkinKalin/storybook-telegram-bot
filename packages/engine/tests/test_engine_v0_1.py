@@ -232,3 +232,42 @@ def test_free_text_high_confidence_applies_deltas_and_clamps():
     assert log["classifier_delta_clamped"] is True
     assert sum(abs(d["delta"]) for d in log["applied_deltas"]) <= 2
     assert new_state["traits"]["t1"] + new_state["traits"]["t2"] <= 12
+
+
+def test_free_text_milestone_vote_from_intent_trait():
+    state = init_state_v01(8)
+    state["step0"] = 2
+    content = make_content_step()
+    turn = {
+        "kind": "free_text",
+        "text": "я аккуратно договариваюсь",
+        "classifier_result": {
+            "intent_trait": "t2",
+            "confidence": 0.9,
+            "safety": "ok",
+            "deltas": [],
+            "tags": [],
+        },
+    }
+    new_state, log = apply_turn(state, turn, content)
+    assert log["milestone_vote_current"] == {"vote": "t2", "reason": "intent"}
+    assert new_state["milestone_votes"]["m2"] == {"vote": "t2", "reason": "intent"}
+
+
+def test_free_text_milestone_vote_none_when_confidence_below_threshold():
+    state = init_state_v01(8)
+    state["step0"] = 2
+    content = make_content_step()
+    turn = {
+        "kind": "free_text",
+        "text": "я аккуратно договариваюсь",
+        "classifier_result": {
+            "intent_trait": "t2",
+            "confidence": 0.69,
+            "safety": "ok",
+            "deltas": [],
+            "tags": [],
+        },
+    }
+    _, log = apply_turn(state, turn, content)
+    assert log["milestone_vote_current"] == {"vote": "none", "reason": "none"}

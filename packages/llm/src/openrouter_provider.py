@@ -195,6 +195,37 @@ class OpenRouterProvider:
         format_mode = os.getenv("OPENROUTER_RESPONSE_FORMAT", "json_object").strip().lower()
         if format_mode != "json_schema":
             return {"type": "json_object"}
+
+        classifier_result_schema = {
+            "type": ["object", "null"],
+            "properties": {
+                "intent_trait": {
+                    "type": "string",
+                    "enum": ["t1", "t2", "t3", "t4", "t5", "t6", "neutral"],
+                },
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "safety": {"type": "string", "enum": ["ok", "unclear"]},
+                "deltas": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "trait": {
+                                "type": "string",
+                                "enum": ["t1", "t2", "t3", "t4", "t5", "t6"],
+                            },
+                            "delta": {"type": "integer"},
+                        },
+                        "required": ["trait", "delta"],
+                        "additionalProperties": False,
+                    },
+                },
+                "tags": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["intent_trait", "confidence", "safety", "deltas", "tags"],
+            "additionalProperties": False,
+        }
+
         if expected_type == "book_rewrite_v1":
             schema = {
                 "type": "object",
@@ -250,6 +281,7 @@ class OpenRouterProvider:
                         },
                     },
                     "memory": {"type": ["object", "null"]},
+                    "classifier_result": classifier_result_schema,
                 },
                 "required": ["text", "recap_short", "choices"],
                 "additionalProperties": False,
@@ -267,6 +299,7 @@ class OpenRouterProvider:
                         "items": {"type": "object"},
                     },
                     "memory": {"type": ["object", "null"]},
+                    "classifier_result": classifier_result_schema,
                 },
                 "required": ["text"],
                 "additionalProperties": False,

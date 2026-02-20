@@ -11,10 +11,13 @@ from src.services.content_stub import build_content_step
 from src.services.story_runtime import (
     StepView,
     build_final_step_result,
+    build_story_request,
     build_step_result,
+    expected_type_for_step,
     render_current_step,
     step_result_to_view,
 )
+from packages.llm.src import generate as llm_generate
 
 TurnStatus = Literal["accepted", "duplicate", "stale", "invalid"]
 
@@ -89,6 +92,37 @@ def apply_l3_turn(
             state = params
         state_before = copy.deepcopy(state)
         content = build_content_step(session_row["theme_id"], state["step0"], state)
+        llm_obj: Dict[str, Any] = {}
+        expected_type = expected_type_for_step(state_before["step0"], state_before["n"])
+        story_request = build_story_request(
+            theme_id=session_row.get("theme_id"),
+            state=state_before,
+            content=content,
+            recaps=[],
+            last_choice=None,
+            child_name=session_row.get("child_name"),
+        )
+        story_request["turn"] = {
+            "kind": turn.get("kind"),
+            "choice_id": turn.get("choice_id"),
+            "text": turn.get("text"),
+        }
+        llm_result = llm_generate(
+            {
+                "expected_type": expected_type,
+                "theme_id": session_row.get("theme_id"),
+                "step": state_before.get("step0"),
+                "total_steps": state_before.get("n"),
+                "allow_free_text": state_before.get("free_text_allowed_after"),
+                "engine_input": state_before,
+                "story_request": story_request,
+            }
+        )
+        if isinstance(llm_result.parsed_json, dict):
+            llm_obj = llm_result.parsed_json
+        if turn.get("kind") == "free_text":
+            classifier_result = llm_obj.get("classifier_result") if isinstance(llm_obj, dict) else None
+            turn["classifier_result"] = classifier_result if isinstance(classifier_result, dict) else None
         new_state, step_log = apply_turn(state, turn, content)
         turn_kind = turn.get("kind", "")
         payload_value = turn.get("choice_id") or turn.get("text") or ""
@@ -100,7 +134,11 @@ def apply_l3_turn(
             "turn_fingerprint": fingerprint,
             "turn": turn,
         }
-        deltas_json = {"applied_deltas": step_log["applied_deltas"]}
+        deltas_json = {
+            "applied_deltas": step_log["applied_deltas"],
+            "neutral_reason": step_log.get("neutral_reason"),
+            "milestone_vote_current": step_log.get("milestone_vote_current"),
+        }
         if step_log["final_id"]:
             step_result_json = build_final_step_result(
                 step_log["final_id"],

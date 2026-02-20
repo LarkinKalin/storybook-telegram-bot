@@ -72,3 +72,28 @@ def test_book_pdf_skips_missing_asset_file_with_warning(monkeypatch: pytest.Monk
     assert "book.pdf missing image file" in caplog.text
     assert "book.pdf image draw failed" not in caplog.text
     assert _count_pages_with_images(pdf_bytes) < 8
+
+
+@pytest.mark.skipif(br.canvas is None, reason="reportlab unavailable")
+def test_book_pdf_skips_invalid_image_file_without_exception_spam(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    bad = tmp_path / "bad.bin"
+    bad.write_bytes(b"not-an-image" * 6)
+
+    def fake_get_by_id(asset_id: int):
+        return {"id": asset_id, "storage_key": "images/invalid.bin", "sha256": "deadbeef", "mime": "image/png"}
+
+    monkeypatch.setattr(br.assets, "get_by_id", fake_get_by_id)
+    monkeypatch.setattr(br, "_resolve_asset_file_path", lambda _row: bad)
+
+    script = {
+        "title": "Тест",
+        "pages": [
+            {"page_no": i, "heading": f"Страница {i}", "text": "Текст страницы", "image_prompt": "Prompt"}
+            for i in range(1, 9)
+        ],
+    }
+    pdf_bytes = br._build_book_pdf_bytes(script, child_name="Дружок", image_assets=[43] * 8)
+    assert pdf_bytes.startswith(b"%PDF")
+    assert "book.pdf invalid image file" in caplog.text
+    assert "book.pdf image draw failed" not in caplog.text
+    assert _count_pages_with_images(pdf_bytes) < 8

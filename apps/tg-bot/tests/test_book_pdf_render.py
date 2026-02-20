@@ -14,6 +14,19 @@ if str(APP_ROOT) not in sys.path:
 from src.services import book_runtime as br  # noqa: E402
 
 
+def _count_pages_with_images(pdf_bytes: bytes) -> int:
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    count = 0
+    for page in reader.pages:
+        resources = page.get("/Resources")
+        if not resources:
+            continue
+        xobj = resources.get("/XObject")
+        if xobj:
+            count += 1
+    return count
+
+
 @pytest.mark.skipif(br.canvas is None, reason="reportlab unavailable")
 def test_book_pdf_has_8_pages_and_image_xobject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pil = pytest.importorskip("PIL.Image")
@@ -37,12 +50,7 @@ def test_book_pdf_has_8_pages_and_image_xobject(tmp_path: Path, monkeypatch: pyt
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
     assert len(reader.pages) == 8
-
-    page = reader.pages[1]
-    resources = page["/Resources"]
-    xobj = resources.get("/XObject")
-    assert xobj is not None
-    assert len(xobj.keys()) >= 1
+    assert _count_pages_with_images(pdf_bytes) == 8
 
 
 @pytest.mark.skipif(br.canvas is None, reason="reportlab unavailable")
@@ -62,3 +70,5 @@ def test_book_pdf_skips_missing_asset_file_with_warning(monkeypatch: pytest.Monk
     pdf_bytes = br._build_book_pdf_bytes(script, child_name="Дружок", image_assets=[41] * 8)
     assert pdf_bytes.startswith(b"%PDF")
     assert "book.pdf missing image file" in caplog.text
+    assert "book.pdf image draw failed" not in caplog.text
+    assert _count_pages_with_images(pdf_bytes) < 8

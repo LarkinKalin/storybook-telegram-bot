@@ -233,8 +233,8 @@ async def _send_settings_screen(message: Message) -> None:
     add_dev = bool(message.from_user and can_use_dev_tools(message.from_user.id))
     await _send_inline_screen(
         message,
-        "⚙ Настройки\n\nМожно сохранить имя ребёнка для сказок и будущей книжки.",
-        lambda: build_settings_keyboard(add_dev_tools=add_dev),
+        "⚙ Настройки\n\nПока настроек нет, скоро появятся.",
+        build_settings_keyboard,
     )
 
 

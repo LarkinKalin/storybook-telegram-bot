@@ -134,6 +134,19 @@ def _build_book_script_from_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
 
 def build_book_input(session_row: dict[str, Any], theme_title: str | None = None) -> dict[str, Any]:
     events = _load_session_steps(session_row["id"])
+    for step in events:
+        if not isinstance(step, dict):
+            continue
+        if step.get("chosen_choice_text"):
+            continue
+        chosen_choice_id = step.get("chosen_choice_id")
+        choices = step.get("choices") if isinstance(step.get("choices"), list) else []
+        for choice in choices:
+            if isinstance(choice, dict) and str(choice.get("id")) == str(chosen_choice_id):
+                text = choice.get("text")
+                if isinstance(text, str) and text.strip():
+                    step["chosen_choice_text"] = text.strip()
+                break
     style_ref = _pick_style_reference(session_row["id"])
     child_name = (session_row.get("child_name") or "").strip()
     return {
@@ -169,12 +182,23 @@ def _load_session_steps(session_id: int) -> list[dict[str, Any]]:
         sr = row.get("step_result_json") if isinstance(row.get("step_result_json"), dict) else {}
         narration = _step_narration(sr)
         step_index = int(row["step"]) + 1
+        choices = _step_choices_for_protocol(sr)
+        chosen_choice_id = sr.get("chosen_choice_id") or row.get("choice_id")
+        chosen_choice_text = None
+        if chosen_choice_id:
+            for choice in choices:
+                if isinstance(choice, dict) and str(choice.get("id")) == str(chosen_choice_id):
+                    text = choice.get("text")
+                    if isinstance(text, str) and text.strip():
+                        chosen_choice_text = text.strip()
+                    break
         items.append(
             {
                 "step_index": step_index,
                 "narration_text": narration,
-                "choices": _step_choices_for_protocol(sr),
-                "chosen_choice_id": sr.get("chosen_choice_id") or row.get("choice_id"),
+                "choices": choices,
+                "chosen_choice_id": chosen_choice_id,
+                "chosen_choice_text": chosen_choice_text,
                 "story_step_json": sr.get("story_step_json") if isinstance(sr.get("story_step_json"), dict) else sr,
             }
         )
@@ -484,21 +508,23 @@ def _resolve_asset_file_path(asset_row: dict[str, Any]) -> Path | None:
     sha256 = str(asset_row.get("sha256") or "").strip()
     mime = str(asset_row.get("mime") or "").strip().lower()
 
-    ext = ".png"
+    exts: list[str] = [".png", ".jpg", ".jpeg", ".webp"]
     if "jpeg" in mime or "jpg" in mime:
-        ext = ".jpg"
+        exts = [".jpg", ".jpeg", ".png", ".webp"]
     elif "webp" in mime:
-        ext = ".webp"
+        exts = [".webp", ".png", ".jpg", ".jpeg"]
 
     candidates: list[Path] = []
     if storage_key:
         candidates.append(base / storage_key)
-    if sha256:
-        candidates.append(base / "images" / f"{sha256}{ext}")
     if storage_key:
-        candidates.append(base / "images" / f"{storage_key}{ext}")
-    if sha256:
-        candidates.append(base / f"{sha256}{ext}")
+        candidates.append(base / "images" / storage_key)
+    for ext in exts:
+        if storage_key:
+            candidates.append(base / "images" / f"{storage_key}{ext}")
+        if sha256:
+            candidates.append(base / "images" / f"{sha256}{ext}")
+            candidates.append(base / f"{sha256}{ext}")
 
     for candidate in candidates:
         if candidate.exists() and candidate.is_file():
@@ -581,28 +607,26 @@ def _build_book_pdf_bytes(
                             a.get("storage_key"),
                             a.get("sha256"),
                         )
-                        raise FileNotFoundError("asset file not found")
-                    img = ImageReader(str(p))
-                    src_w, src_h = img.getSize()
-                    if src_w and src_h:
-                        scale = max(page_w / float(src_w), page_h / float(src_h))
-                        draw_w = float(src_w) * scale
-                        draw_h = float(src_h) * scale
-                        draw_x = (page_w - draw_w) / 2.0
-                        draw_y = (page_h - draw_h) / 2.0
                     else:
-                        draw_w, draw_h, draw_x, draw_y = img_box_w, img_box_h, img_x, img_y
-                    c.drawImage(
-                        img,
-                        draw_x,
-                        draw_y,
-                        width=draw_w,
-                        height=draw_h,
-                        preserveAspectRatio=False,
-                        mask="auto",
-                    )
-            except FileNotFoundError:
-                pass
+                        img = ImageReader(str(p))
+                        src_w, src_h = img.getSize()
+                        if src_w and src_h:
+                            scale = max(page_w / float(src_w), page_h / float(src_h))
+                            draw_w = float(src_w) * scale
+                            draw_h = float(src_h) * scale
+                            draw_x = (page_w - draw_w) / 2.0
+                            draw_y = (page_h - draw_h) / 2.0
+                        else:
+                            draw_w, draw_h, draw_x, draw_y = img_box_w, img_box_h, img_x, img_y
+                        c.drawImage(
+                            img,
+                            draw_x,
+                            draw_y,
+                            width=draw_w,
+                            height=draw_h,
+                            preserveAspectRatio=False,
+                            mask="auto",
+                        )
             except Exception:
                 logger.exception("book.pdf image draw failed page=%s asset_id=%s", idx, asset_id)
 

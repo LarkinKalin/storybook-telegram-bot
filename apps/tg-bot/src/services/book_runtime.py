@@ -522,14 +522,6 @@ def _build_book_pdf_bytes(
     FONT_B = "DejaVuSans-Bold"
 
     c.setTitle(str(title))
-    c.setFont(FONT_B, 16)
-    c.drawString(36, page_h - 56, str(title))
-    c.setFont(FONT, 11)
-    c.drawString(36, page_h - 78, f"Имя героя: {child_name or 'дружок'}")
-    c.drawString(36, page_h - 94, f"Дата: {datetime.utcnow().date().isoformat()}")
-    c.setFont(FONT, 9)
-    c.drawRightString(page_w - 24, 20, "1")
-    c.showPage()
 
     for idx, page in enumerate(pages, start=1):
         page_no = page.get("page_no") or idx
@@ -577,7 +569,8 @@ def _build_book_pdf_bytes(
 
         c.setFillColorRGB(0, 0, 0)
         c.setFont(FONT_B, 13)
-        c.drawString(28, 20 + panel_h - 24, heading)
+        heading_text = heading if idx != 1 else f"{title}: {heading}"
+        c.drawString(28, 20 + panel_h - 24, heading_text)
 
         c.setFont(FONT, 10)
         wrapped = simpleSplit(text, FONT, 10, page_w - 56)
@@ -588,8 +581,9 @@ def _build_book_pdf_bytes(
             if y < 30:
                 break
         c.setFont(FONT, 9)
-        c.drawRightString(page_w - 24, 20, str(idx + 1))
-        c.showPage()
+        c.drawRightString(page_w - 24, 20, str(idx))
+        if idx < len(pages):
+            c.showPage()
 
     c.save()
     return buf.getvalue()

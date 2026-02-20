@@ -14,17 +14,11 @@ if str(APP_ROOT) not in sys.path:
 from src.services import book_runtime as br  # noqa: E402
 
 
-def _tiny_png() -> bytes:
-    return bytes.fromhex(
-        "89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C489"
-        "0000000A49444154789C6360000002000154A24F5D0000000049454E44AE426082"
-    )
-
-
 @pytest.mark.skipif(br.canvas is None, reason="reportlab unavailable")
 def test_book_pdf_has_8_pages_and_image_xobject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pil = pytest.importorskip("PIL.Image")
     img = tmp_path / "p.png"
-    img.write_bytes(_tiny_png())
+    pil.new("RGB", (8, 8), (120, 80, 200)).save(img, format="PNG")
 
     def fake_get_by_id(asset_id: int):
         return {"id": asset_id, "storage_key": "book/test.png"}
@@ -42,7 +36,7 @@ def test_book_pdf_has_8_pages_and_image_xobject(tmp_path: Path, monkeypatch: pyt
     pdf_bytes = br._build_book_pdf_bytes(script, child_name="Дружок", image_assets=[1] * 8)
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
-    assert len(reader.pages) == 9
+    assert len(reader.pages) == 8
 
     page = reader.pages[1]
     resources = page["/Resources"]

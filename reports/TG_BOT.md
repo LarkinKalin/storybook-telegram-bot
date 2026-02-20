@@ -84,3 +84,7 @@ Env-флаги:
 - `SKAZKA_BOOK_REWRITE_PROMPT` (default empty) — прямой override prompt текстом.
 - `SKAZKA_BOOK_REWRITE_MODEL` (default `openrouter/kimi-k2`) — модель rewrite.
 - `SKAZKA_BOOK_IMAGES` (default `1`) — включить генерацию изображений.
+
+### Дополнение TG.8.1.02.B (strict 8 pages)
+- PDF рендерит **строго 8 страниц** по `book_script.pages` без дополнительной cover-страницы.
+- Проверка изображений без внешнего провайдера: можно передать в рендер один существующий `asset_id` как `[asset_id] * 8` и проверить наличие `/XObject` (image) через `pypdf`.

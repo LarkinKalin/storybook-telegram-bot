@@ -24,7 +24,7 @@ def test_book_pdf_has_8_pages_and_image_xobject(tmp_path: Path, monkeypatch: pyt
         return {"id": asset_id, "storage_key": "book/test.png"}
 
     monkeypatch.setattr(br.assets, "get_by_id", fake_get_by_id)
-    monkeypatch.setattr(br, "_resolve_storage_path", lambda _k: img)
+    monkeypatch.setattr(br, "_resolve_asset_file_path", lambda _row: img)
 
     script = {
         "title": "Тест",
@@ -43,3 +43,22 @@ def test_book_pdf_has_8_pages_and_image_xobject(tmp_path: Path, monkeypatch: pyt
     xobj = resources.get("/XObject")
     assert xobj is not None
     assert len(xobj.keys()) >= 1
+
+
+@pytest.mark.skipif(br.canvas is None, reason="reportlab unavailable")
+def test_book_pdf_skips_missing_asset_file_with_warning(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    def fake_get_by_id(asset_id: int):
+        return {"id": asset_id, "storage_key": "list-session", "sha256": "abc", "mime": "image/png"}
+
+    monkeypatch.setattr(br.assets, "get_by_id", fake_get_by_id)
+
+    script = {
+        "title": "Тест",
+        "pages": [
+            {"page_no": i, "heading": f"Страница {i}", "text": "Текст страницы", "image_prompt": "Prompt"}
+            for i in range(1, 9)
+        ],
+    }
+    pdf_bytes = br._build_book_pdf_bytes(script, child_name="Дружок", image_assets=[41] * 8)
+    assert pdf_bytes.startswith(b"%PDF")
+    assert "book.pdf missing image file" in caplog.text

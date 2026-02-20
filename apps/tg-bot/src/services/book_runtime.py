@@ -187,10 +187,14 @@ def _pick_style_reference(session_id: int) -> int | None:
         return None
     for row in images:
         if row.get("step_ui") == 1 and row.get("asset_id"):
-            return int(row["asset_id"])
+            asset_row = assets.get_by_id(int(row["asset_id"]))
+            if asset_row and _resolve_asset_file_path(asset_row):
+                return int(row["asset_id"])
     for row in reversed(images):
         if row.get("asset_id"):
-            return int(row["asset_id"])
+            asset_row = assets.get_by_id(int(row["asset_id"]))
+            if asset_row and _resolve_asset_file_path(asset_row):
+                return int(row["asset_id"])
     return None
 
 
@@ -466,12 +470,40 @@ def _load_reference_payload(asset_id: int | None) -> tuple[bytes, str] | None:
     if asset_id is None:
         return None
     row = assets.get_by_id(asset_id)
-    if not row or not row.get("storage_key"):
+    if not row:
         return None
-    path = _resolve_storage_path(str(row["storage_key"]))
-    if not path.exists():
+    path = _resolve_asset_file_path(row)
+    if path is None:
         return None
     return path.read_bytes(), str(row.get("mime") or "image/png")
+
+
+def _resolve_asset_file_path(asset_row: dict[str, Any]) -> Path | None:
+    base = Path("/app/var/assets")
+    storage_key = str(asset_row.get("storage_key") or "").strip()
+    sha256 = str(asset_row.get("sha256") or "").strip()
+    mime = str(asset_row.get("mime") or "").strip().lower()
+
+    ext = ".png"
+    if "jpeg" in mime or "jpg" in mime:
+        ext = ".jpg"
+    elif "webp" in mime:
+        ext = ".webp"
+
+    candidates: list[Path] = []
+    if storage_key:
+        candidates.append(base / storage_key)
+    if sha256:
+        candidates.append(base / "images" / f"{sha256}{ext}")
+    if storage_key:
+        candidates.append(base / "images" / f"{storage_key}{ext}")
+    if sha256:
+        candidates.append(base / f"{sha256}{ext}")
+
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
 
 
 def _required_story_step_indexes(total_steps: int) -> list[int]:
@@ -539,8 +571,17 @@ def _build_book_pdf_bytes(
         if asset_id and ImageReader is not None:
             try:
                 a = assets.get_by_id(int(asset_id))
-                if a and a.get("storage_key"):
-                    p = _resolve_storage_path(a["storage_key"])
+                if a:
+                    p = _resolve_asset_file_path(a)
+                    if p is None:
+                        logger.warning(
+                            "book.pdf missing image file page=%s asset_id=%s storage_key=%s sha256=%s",
+                            idx,
+                            asset_id,
+                            a.get("storage_key"),
+                            a.get("sha256"),
+                        )
+                        raise FileNotFoundError("asset file not found")
                     img = ImageReader(str(p))
                     src_w, src_h = img.getSize()
                     if src_w and src_h:
@@ -560,6 +601,8 @@ def _build_book_pdf_bytes(
                         preserveAspectRatio=False,
                         mask="auto",
                     )
+            except FileNotFoundError:
+                pass
             except Exception:
                 logger.exception("book.pdf image draw failed page=%s asset_id=%s", idx, asset_id)
 

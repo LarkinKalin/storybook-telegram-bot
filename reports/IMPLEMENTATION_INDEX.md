@@ -64,6 +64,5 @@ YYYY-MM-DD | TG.5.1.01 | DONE | LLM STORY_STEP contract v0.1 accepted (REV2 FINA
 2026-02-12 | TG.8.2.XX.FINAL_PIPELINE_STABLE | DONE | L3 turn result now carries max_steps in all outcomes; end-of-story offer decisions consistently use step/max_steps context
 2026-02-12 | TG.8.2.XX.HOTFIX_BOOT_GUARD | DONE | Normalized IMPLEMENTATION_INDEX header duplication and added Dockerfile merge-marker guard step to fail image build on conflict artifacts
 2026-02-13 | TG.8.1.02.B | DONE | Book PDF quality v1: DejaVu Cyrillic fonts + image-backed page render with bottom text panel; image generation now uses provider with style-ref fallback; added pypdf dependency
-
-2026-02-20 | TG.LLM.CLASSIFIER.MILESTONES.ONECALL.V1 | DONE | Runtime one-call classifier plumbing: free_text turn now receives `classifier_result` from LLM JSON before `engine.apply_turn`; session_events.deltas_json persists applied_deltas + neutral_reason + milestone_vote_current; story_step/story_final schema+prompts updated for optional classifier_result; engine milestone free_text vote uses intent_trait with confidence gate; tests added.
-2026-02-20 | TG.L3.RUNTIME.INVALID.FREETEXT.RESULTBUG.V1 | DONE | Fixed early invalid free_text branch in `apps/tg-bot/src/services/l3_runtime.py`: removed undefined `result.session_row` access, set `max_steps=None` to avoid NameError crash.
+2026-02-13 | TG.8.1.02.B.PATCH | DONE | PDF page count fixed to strict 8 (removed extra cover page); added deterministic image-in-PDF check strategy via reused existing asset_id
+2026-02-13 | TG.8.1.02.B.ASSET_PATH_FIX | DONE | Added robust asset-file resolver for PDF image drawing (handles malformed storage_key); missing files now logged as warning without renderer exceptions

@@ -82,7 +82,7 @@ def apply_l3_turn(
             step=st2,
             theme_id=None,
             final_id=None,
-            max_steps=int(result.session_row.get("max_steps", 0)) if result and result.session_row else None,
+            max_steps=None,
         )
     def _apply_in_tx(session_row: Dict[str, Any]) -> l3_turns.L3ApplyPayload:
         params = session_row.get("params_json") or {}
@@ -253,7 +253,7 @@ def apply_l3_turn(
             step=int(result.session_row["step"]),
             theme_id=result.session_row.get("theme_id"),
             final_id=None,
-            max_steps=int(result.session_row.get("max_steps", 0)) if result and result.session_row else None,
+            max_steps=None,
         )
     if result.outcome == "invalid":
         return L3TurnResult(
@@ -263,7 +263,7 @@ def apply_l3_turn(
             step=int(result.session_row["step"]),
             theme_id=result.session_row.get("theme_id"),
             final_id=None,
-            max_steps=int(result.session_row.get("max_steps", 0)) if result and result.session_row else None,
+            max_steps=None,
         )
     if result.outcome == "duplicate":
         step_result_json = None
@@ -287,7 +287,7 @@ def apply_l3_turn(
             step=int(result.session_row["step"]),
             theme_id=result.session_row.get("theme_id"),
             final_id=final_id,
-            max_steps=int(result.session_row.get("max_steps", 0)) if result and result.session_row else None,
+            max_steps=None,
         )
     payload = result.payload
     step_view = step_result_to_view(
